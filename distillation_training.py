@@ -86,10 +86,11 @@ from models import Teacher
 
 class DistillationTraining(object):
 
-    def __init__(self,channel_size) -> None:
+    def __init__(self,channel_size,save_path) -> None:
         self.channel_size = channel_size
         self.mean = torch.empty(channel_size)
         self.std = torch.empty(channel_size)
+        self.save_path = save_path
 
     def normalize_channel(self,dataloader):
         for c in range(self.channel_size):
@@ -145,5 +146,8 @@ class DistillationTraining(object):
             optimizer.step()
             if iteration% 10 ==0:
                 print('iter:{},loss:{}'.format(iteration,loss.item()))
+
+        # save teacher
+        torch.save(teacher.state_dict(), '{}/teacher.pth'.format(self.save_path))
         
         

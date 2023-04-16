@@ -32,8 +32,6 @@ class PDN_S(nn.Module):
         x = self.conv4(x)
         return x
     
-
-
 class PDN_M(nn.Module):
 
     def __init__(self) -> None:
@@ -170,15 +168,15 @@ class DecConv(nn.Module):
 
 class AutoEncoder(nn.Module):
     
-        def __init__(self, *args, **kwargs) -> None:
-            super().__init__(*args, **kwargs)
-            self.encoder = EncConv()
-            self.decoder = DecConv()
-    
-        def forward(self, x):
-            x = self.encoder(x)
-            x = self.decoder(x)
-            return x
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.encoder = EncConv()
+        self.decoder = DecConv()
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
         
 class Teacher(nn.Module):
 
