@@ -6,9 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from torchvision import transforms
 from models import Teacher,Student,AutoEncoder
-from data_loader import TrainImageOnlyDataset
-def train_on_imagenet():
-    pass
+from data_loader import TrainImageOnlyDataset,ImageNetDataset
 
 
 def channel_normalization_parameters(teacher,dataloader):
@@ -40,20 +38,23 @@ def channel_normalization_parameters(teacher,dataloader):
 class Reduced_Student_Teacher(object):
 
 
-    def __init__(self,train_dir,val_dir,ckpt_path,channel_size=384,fmap_size  = 256) -> None:
+    def __init__(self,train_dir,val_dir,imagenet_dir,ckpt_path,channel_size=384,fmap_size  = 256) -> None:
         self.train_dir = train_dir
         self.val_dir = val_dir
+        self.imagenet_dir = imagenet_dir
         self.teacher = Teacher()
+        self.load_pretrain_teacher()
         self.student = Student()
         self.ae = AutoEncoder()
         self.ckpt_path = ckpt_path
         self.channel_size = channel_size
         self.fmap_size = (fmap_size,fmap_size)
-        self.channel_mean,self.channel_std = channel_normalization_parameters(self.teacher,self.dataloader)
+        self.channel_mean,self.channel_std = None,None
 
+    def load_pretrain_teacher(self):
+        self.teacher.load_state_dict(torch.load(self.ckpt_path+'/teacher.pth'))
+        self.teacher.eval()
 
-    def choose_random_training_image(self):
-        pass
 
     def choose_random_aug_image(self,image):
         aug_index = random.choice([1,2,3])
@@ -77,9 +78,9 @@ class Reduced_Student_Teacher(object):
         normal_t_out = torch.stack(normal_t_out,dim=1)
         return normal_t_out
 
-    def loss_st(self,teacher,student,autoencoder):
+    def loss_st(self,image,imagenet_loader,teacher,student,autoencoder):
         #Choose a random training image_train from dataloader_rain
-        image = self.dataloader[0]
+        # image = self.dataloader[0]
         #Forward pass of the student–teacher pair
         t_pdn_out = teacher(image)
         b,c,h,w = t_pdn_out.shape
@@ -94,13 +95,14 @@ class Reduced_Student_Teacher(object):
         # Compute the loss Lhard as the mean of all DST c,w,h ≥ dhard
         Lhard = torch.mean(distance_s_t[distance_s_t>=dhard])
         # Choose a random pretraining image P ∈ R 3×256×256 from ImageNet [54]
-        image_p = self.choose_random_training_image()
+        image_p = next(imagenet_loader)
+        s_imagenet_out = student(image_p)
         # Compute the loss LST = Lhard + (384 · 64 · 64)−1 P 384 c=1 k S(P)ck 2 F
-        loss_st = Lhard + (1/(c*h*w))*torch.sum(torch.pow(s_ae_out,2))
+        loss_st = Lhard + (1/(c*h*w))*torch.sum(torch.pow(s_imagenet_out,2))
         return loss_st
     
-    def loss_ae(self,teacher,student,autoencoder):
-        aug_img = self.choose_random_aug_image(self.dataloader[0])
+    def loss_ae(self,image,teacher,student,autoencoder):
+        aug_img = self.choose_random_aug_image(image=image)
         ae_out = autoencoder(aug_img)
         t_out = teacher(aug_img)
         # Compute the normalized teacher output Yˆ given by Yˆc = σc−1(Yc0 − µc) for each c ∈ {1, . . . , 384}
@@ -119,7 +121,7 @@ class Reduced_Student_Teacher(object):
         LSTAE = torch.mean(distance_stae)
         return LAE,LSTAE
     
-    def train(self,):
+    def train(self,epochs=100):
         # Initialize Adam [29] with a learning rate of 10−4 and a weight decay of 10−5 for the parameters of S and A
         optimizer = optim.Adam(list(self.student.parameters())+list(self.ae.parameters()),lr=0.0001,weight_decay=0.00001)
         dataset = TrainImageOnlyDataset(root_dir=self.root_dir,
@@ -129,20 +131,34 @@ class Reduced_Student_Teacher(object):
                                                     std=[0.229, 0.224, 0.225])
                                             ]))
         dataloader = DataLoader(dataset,batch_size=1,shuffle=True)
-        for i_batch, sample_batched in enumerate(dataloader):
-            optimizer.zero_grad()
-            loss_st = self.loss_st(self.teacher,self.student,self.ae)
-            LAE,LSTAE = self.loss_ae(self.teacher,self.student,self.ae)
-            loss = loss_st + LAE + LSTAE
-            loss.backward()
-            optimizer.step()
-            if i_batch % 10 == 0:
-                print(i_batch,loss.item())
-                #save model
+        imagenet = ImageNetDataset(root_dir=self.root_dir,
+                                        transform=transforms.Compose([
+                                            transforms.ToTensor(),  
+                                            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                    std=[0.229, 0.224, 0.225])
+                                            ]))
+        imagenet_loader = DataLoader(imagenet,batch_size=1,shuffle=True)
+        self.channel_mean,self.channel_std = channel_normalization_parameters(self.teacher,dataloader)
+
+        for epoch in range(epochs):
+
+            for i_batch, sample_batched in enumerate(dataloader):
+                optimizer.zero_grad()
+                loss_st = self.loss_st(sample_batched,
+                                        self.teacher,self.student,self.ae)
+                LAE,LSTAE = self.loss_ae(sample_batched,imagenet_loader,
+                                         self.teacher,self.student,self.ae)
+                loss = loss_st + LAE + LSTAE
+                loss.backward()
+                optimizer.step()
+                if i_batch % 10 == 0:
+                    print(i_batch,loss.item())
+                    #save model
+            if epoch % 10 == 0:
+                print('saving model in {}'.format(self.save_dir))
                 torch.save(self.student.state_dict(),'student.pt')
                 torch.save(self.ae.state_dict(),'ae.pt')
-
-        qa_st,qb_st,qa_ae,qb_ae = self.val()
+            qa_st,qb_st,qa_ae,qb_ae = self.val()
         quantiles = {
             'qa_st':qa_st,
             'qb_st':qb_st,
@@ -153,9 +169,6 @@ class Reduced_Student_Teacher(object):
         }
         #save quantiles pytorchtype
         torch.save(quantiles,'quantiles.pt')
-
-
-
             
     def val(self):
         xst,xae = [],[]
