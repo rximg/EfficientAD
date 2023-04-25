@@ -16,51 +16,49 @@ import torch.nn.functional as F
 import random
 from torch import optim
 from torch.utils.data import Dataset, DataLoader
-
+import numpy as np
 from torchvision import transforms
 from models import Teacher,Student,AutoEncoder
-from data_loader import TrainImageOnlyDataset
-
+from data_loader import MVTecDataset
+import pdb
+import cv2
+from PIL import Image
+import os
 class Inference(object):
 
-    def __init__(self,val_dir,model_path) -> None:
+    def __init__(self,val_dir,model_path,model_size='S',resize=256) -> None:
         self.val_dir = val_dir
-        self.teacher = Teacher()
-        self.student = Student()
+        self.teacher = Teacher(model_size)
+        self.student = Student(model_size)
         self.ae = AutoEncoder()
         self.model_path = model_path
         self.load_model()
+        self.data_transforms = transforms.Compose([
+                        transforms.Resize((resize, resize), Image.ANTIALIAS),
+                        transforms.ToTensor(),
+                        ])
+        self.gt_transforms = transforms.Compose([
+                        transforms.Resize((resize, resize)),
+                        transforms.ToTensor()])
 
     def load_model(self,):
-        teacher_ckpt = torch.load(self.model_path+'/teacher.pth')
+        teacher_ckpt = torch.load(self.model_path+'/best_teacher.pth')
         student_ckpt = torch.load(self.model_path+'/student.pth')
-        ae_ckpt = torch.load(self.model_path+'/ae.pth')
-        self.teacher.load_state_dict(teacher_ckpt['model_state_dict'])
-        self.student.load_state_dict(student_ckpt['model_state_dict'])
-        self.ae.load_state_dict(ae_ckpt['model_state_dict'])
-        # quantiles = {
-        #     'qa_st':qa_st,
-        #     'qb_st':qb_st,
-        #     'qa_ae':qa_ae,
-        #     'qb_ae':qb_ae,
-        #     'std':self.channel_std,
-        #     'mean':self.channel_mean
-        # }
-        quantiles = torch.load(self.model_path+'/quantiles.pth')
-        self.qa_st = quantiles['qa_st']
-        self.qb_st = quantiles['qb_st']
-        self.qa_ae = quantiles['qa_ae']
-        self.qb_ae = quantiles['qb_ae']
-        self.channel_std = quantiles['std']
-        self.channel_mean = quantiles['mean']
-
-    def compute_normalize_teacher_out(self,t_out):
-        normal_t_out = []
-        for c in range(self.channel_size):
-            c_out = t_out[:,c,:,:]
-            normal_t_out.append((c_out-self.channel_mean[c])/self.channel_std[c])
-        normal_t_out = torch.stack(normal_t_out,dim=1)
-        return normal_t_out
+        ae_ckpt = torch.load(self.model_path+'/autoencoder.pth')
+        # pdb.set_trace()
+        self.teacher.load_state_dict(teacher_ckpt)
+        self.student.load_state_dict(student_ckpt)
+        self.ae.load_state_dict(ae_ckpt)
+        self.teacher.cuda()
+        self.student.cuda()
+        self.ae.cuda()
+        quantiles = np.load(self.model_path+'/quantiles.npy',allow_pickle=True).item()
+        self.qa_st = torch.tensor(quantiles['qa_st']).cuda()
+        self.qb_st = torch.tensor(quantiles['qb_st']).cuda()
+        self.qa_ae = torch.tensor(quantiles['qa_ae']).cuda()
+        self.qb_ae = torch.tensor(quantiles['qb_ae']).cuda()
+        self.channel_std = torch.tensor(quantiles['std']).cuda()
+        self.channel_mean = torch.tensor(quantiles['mean']).cuda()
 
     def infer_single(self,sample_batched):
         img = sample_batched['image']
@@ -68,13 +66,14 @@ class Inference(object):
         teacher_output = self.teacher(img)
         student_output,stae_output = self.student(img)
         ae_output = self.ae(img)
-        normal_teacher_output = self.compute_normalize_teacher_out(teacher_output)
+        normal_teacher_output = (teacher_output-self.channel_mean)/self.channel_std
         distance_st = torch.pow(student_output-ae_output,2)
         distance_stae = torch.pow(normal_teacher_output-stae_output,2)
-        fmap_st = torch.mean(distance_st,dim=1)
-        fmap_stae = torch.mean(distance_stae,dim=1)
+        fmap_st = torch.mean(distance_st,dim=1,keepdim=True)
+        fmap_stae = torch.mean(distance_stae,dim=1,keepdim=True)
         # fmap_st = fmap_st.view(1,1,64,64)
         # fmap_stae = fmap_stae.view(1,1,64,64)
+        # pdb.set_trace()
         fmap_st = F.interpolate(fmap_st,size=(256,256),mode='bilinear')
         fmap_stae = F.interpolate(fmap_stae,size=(256,256),mode='bilinear')
         # fmap_st = fmap_st.view(256,256)
@@ -85,11 +84,40 @@ class Inference(object):
         return combined_map,image_score
 
     def infer(self):
-        dataset = TrainImageOnlyDataset(self.val_dir)
+        dataset = MVTecDataset(
+                        root=self.val_dir,
+                        transform=self.data_transforms,
+                        gt_transform=self.gt_transforms,
+                        phase='test'
+                        )
         dataloader = DataLoader(dataset,batch_size=1,shuffle=True)
+        num = 0
         for i_batch, sample_batched in enumerate(dataloader):
             combined_map,image_score = self.infer_single(sample_batched)
-            print(image_score)
+            print(image_score.item())
+            sorted_str = str(int(image_score.item()*10000)).rjust(6,'0')
+            if not os.path.exists('data/result'):
+                os.mkdir('data/result')
+            out_im_path = 'data/result/{}_{}_{}.png'.format(sorted_str,num,i_batch,image_score)
+            
+            out_im_np = combined_map[0,0,:,:].cpu().detach().numpy()
+            out_im_np = (out_im_np-np.min(out_im_np))/(np.max(out_im_np)-np.min(out_im_np))
+            out_im_np = (out_im_np*255).astype(np.uint8)
+
+            origin_img = sample_batched['image'][0].cpu().detach().numpy()
+            origin_img = np.transpose(origin_img,(1,2,0))
+            origin_img_np = (origin_img*255).astype(np.uint8)
+            # origin_img_np = np.array(origin_img)
+            color_fmap = cv2.applyColorMap(out_im_np, cv2.COLORMAP_JET)
+            out_hstack = np.hstack((origin_img_np,color_fmap))
+            cv2.imwrite(out_im_path,out_hstack)
+
+
             
         
+if __name__ == "__main__":
+    val_dir = 'data/MVTec_AD/bottle/'
+    model_path = 'ckpt'
+    infer = Inference(val_dir,model_path)
+    infer.infer()
         
