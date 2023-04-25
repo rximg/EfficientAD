@@ -1,1 +1,4 @@
-untrace/*
+*.pth
+data/
+*.pyc
+log.txt

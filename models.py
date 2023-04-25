@@ -1,8 +1,93 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
+from torchsummary import summary
+from torchvision.models.resnet import ResNet,load_state_dict_from_url,Bottleneck,model_urls
+import pdb
+
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv2d') != -1:
+        m.weight.data.normal_(0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        m.weight.data.normal_(1.0, 0.02)
+        m.bias.data.fill_(0)
+
+class WideResNet(ResNet):
 
 
+    def __init__(self, block, layers, num_classes=1000, zero_init_residual=False,
+                 groups=1, width_per_group=64, replace_stride_with_dilation=None,
+                 norm_layer=None,target_dim=384):
+        super(WideResNet, self).__init__(block, layers, num_classes, zero_init_residual,
+                 groups, width_per_group, replace_stride_with_dilation,
+                 norm_layer)
+        self.target_dim = target_dim
+        
+    def _forward_impl(self, x):
+        # See note [TorchScript super()]
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        x0 = self.layer1(x)
+        x1 = self.layer2(x0)
+        x2 = self.layer3(x1)
+        # pdb.set_trace()
+        ret = self._proj(x1,x2)
+        # x3 = self.layer4(x)
+
+        # x = self.avgpool(x)
+        # x = torch.flatten(x, 1)
+        # x = self.fc(x)
+
+        return ret
+    
+    
+    def _proj(self,x1,x2):
+        # [2, 512, 64, 64]->[2, 512, 64, 64],[2, 1024, 32, 32]->[2, 1024, 64, 64]
+        # cat [2, 512, 64, 64],[2, 1024, 64, 64]->[2, 1536, 64, 64]
+        # pool [2, 1536, 64, 64]->[2, 384, 32, 32]
+        b,c,h,w = x1.shape
+        x2 = F.interpolate(x2, size=(h,w), mode="bilinear", align_corners=False)
+        features = torch.cat([x1,x2],dim=1)
+        b,c,h,w = features.shape
+        features = features.reshape(b,c,h*w)
+        features = features.transpose(1,2)
+        target_features = F.adaptive_avg_pool1d(features, self.target_dim)
+        # pdb.set_trace()
+        target_features = target_features.transpose(1,2)
+        target_features = target_features.reshape(b,self.target_dim,h,w)
+        return target_features
+
+
+def _resnet(arch, block, layers, pretrained, progress, **kwargs):
+    model = WideResNet(block, layers, **kwargs)
+    if pretrained:
+        state_dict = load_state_dict_from_url(model_urls[arch],
+                                              progress=progress)
+        model.load_state_dict(state_dict)
+    return model
+
+def wide_resnet101_2(pretrained=False, progress=True, **kwargs):
+    r"""Wide ResNet-101-2 model from
+    `"Wide Residual Networks" <https://arxiv.org/pdf/1605.07146.pdf>`_
+
+    The model is the same as ResNet except for the bottleneck number of channels
+    which is twice larger in every block. The number of channels in outer 1x1
+    convolutions is the same, e.g. last block in ResNet-50 has 2048-512-2048
+    channels, and in Wide ResNet-50-2 has 2048-1024-2048.
+
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+        progress (bool): If True, displays a progress bar of the download to stderr
+    """
+    kwargs['width_per_group'] = 64 * 2
+    return _resnet('wide_resnet101_2', Bottleneck, [3, 4, 23, 3],
+                   pretrained, progress, **kwargs)
+
+# print(summary(wide_resnet101_2().cuda(), (3, 512, 512)))
 
 class PDN_S(nn.Module):
 
@@ -65,7 +150,7 @@ class PDN_M(nn.Module):
         x = self.conv6(x)
         return x
     
-class EncConv(nn.modules):
+class EncConv(nn.Module):
 
     def __init__(self) -> None:
         super().__init__()
@@ -82,16 +167,34 @@ class EncConv(nn.modules):
         self.enconv4 = nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1)
         self.enconv5 = nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1)
         self.enconv6 = nn.Conv2d(64, 64, kernel_size=8, stride=1, padding=0)
+        self.apply(weights_init)
 
     def forward(self, x):
+        # pdb.set_trace()
         x = F.relu(self.enconv1(x))
         x = F.relu(self.enconv2(x))
         x = F.relu(self.enconv3(x))
         x = F.relu(self.enconv4(x))
         x = F.relu(self.enconv5(x))
-        x = self.conv6(x)
+        x = self.enconv6(x)
         return x
     
+class DecBlock(nn.Module):
+
+    def __init__(self,scale_factor,stride,kernel_size,num_kernels,padding,activation,dropout_rate,):
+        super().__init__()
+        self.activation = activation    
+        # self.scale_factor = scale_factor
+        self.upsample = nn.Upsample(scale_factor=scale_factor, mode='bilinear')
+        self.deconv = nn.Conv2d(num_kernels, num_kernels, kernel_size, stride, padding)
+        self.dropout = nn.Dropout2d(p=dropout_rate)
+        
+        
+    def forward(self, x):
+        x = self.upsample(x)
+        x = F.relu(self.deconv(x))
+        x = self.dropout(x)
+        return x
 
 class DecConv(nn.Module):
 
@@ -118,19 +221,19 @@ class DecConv(nn.Module):
         # Bilinear-7 Resizes the 128×128 input features maps to 64×64
         # DecConv-7 1×1 3×3 64 1 ReLU
         # DecConv-8 1×1 3×3 384 1 -
-        self.bilinear1 = nn.Upsample(scale_factor=3, mode='bilinear')
-        self.bilinear2 = nn.Upsample(scale_factor=2, mode='bilinear')
-        self.bilinear3 = nn.Upsample(scale_factor=1.5, mode='bilinear')
-        self.bilinear4 = nn.Upsample(scale_factor=2, mode='bilinear')
-        self.bilinear5 = nn.Upsample(scale_factor=2, mode='bilinear')
-        self.bilinear6 = nn.Upsample(scale_factor=2, mode='bilinear')
-        self.bilinear7 = nn.Upsample(scale_factor=0.5, mode='bilinear')
-        self.deconv1 = nn.Conv2d(1, 64, kernel_size=4, stride=2, padding=1)
-        self.deconv2 = nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1)
-        self.deconv3 = nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1)
-        self.deconv4 = nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1)
-        self.deconv5 = nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1)
-        self.deconv6 = nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1)
+        # self.bilinear1 = nn.Upsample(scale_factor=3, mode='bilinear')
+        # self.bilinear2 = nn.Upsample(scale_factor=2, mode='bilinear')
+        # self.bilinear3 = nn.Upsample(scale_factor=1.7, mode='bilinear')
+        # self.bilinear4 = nn.Upsample(scale_factor=2, mode='bilinear')
+        # self.bilinear5 = nn.Upsample(scale_factor=2, mode='bilinear')
+        # self.bilinear6 = nn.Upsample(scale_factor=2, mode='bilinear')
+        # self.bilinear7 = nn.Upsample(scale_factor=0.5, mode='bilinear')
+        self.deconv1 = nn.Conv2d(64, 64, kernel_size=4, stride=1, padding=2)
+        self.deconv2 = nn.Conv2d(64, 64, kernel_size=4, stride=1, padding=2)
+        self.deconv3 = nn.Conv2d(64, 64, kernel_size=4, stride=1, padding=2)
+        self.deconv4 = nn.Conv2d(64, 64, kernel_size=4, stride=1, padding=2)
+        self.deconv5 = nn.Conv2d(64, 64, kernel_size=4, stride=1, padding=2)
+        self.deconv6 = nn.Conv2d(64, 64, kernel_size=4, stride=1, padding=2)
         self.deconv7 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
         self.deconv8 = nn.Conv2d(64, 384, kernel_size=3, stride=1, padding=1)
         self.dropout1 = nn.Dropout(p=0.2)
@@ -139,32 +242,34 @@ class DecConv(nn.Module):
         self.dropout4 = nn.Dropout(p=0.2)
         self.dropout5 = nn.Dropout(p=0.2)
         self.dropout6 = nn.Dropout(p=0.2)
+        self.apply(weights_init)
 
 
     def forward(self, x):
-        x = self.bilinear1(x)
+        # x = self.bilinear1(x)
+        x = F.interpolate(x, size=3, mode='bilinear')
         x = F.relu(self.deconv1(x))
         x = self.dropout1(x)
-        x = self.bilinear2(x)
+        x = F.interpolate(x, size=8, mode='bilinear')
         x = F.relu(self.deconv2(x))
         x = self.dropout2(x)
-        x = self.bilinear3(x)
+        x = F.interpolate(x, size=15, mode='bilinear')
         x = F.relu(self.deconv3(x))
         x = self.dropout3(x)
-        x = self.bilinear4(x)
+        x = F.interpolate(x, size=32, mode='bilinear')
         x = F.relu(self.deconv4(x))
         x = self.dropout4(x)
-        x = self.bilinear5(x)
+        x = F.interpolate(x, size=63, mode='bilinear')
         x = F.relu(self.deconv5(x))
         x = self.dropout5(x)
-        x = self.bilinear6(x)
+        x = F.interpolate(x, size=127, mode='bilinear')
         x = F.relu(self.deconv6(x))
         x = self.dropout6(x)
-        x = self.bilinear7(x)
+        x = F.interpolate(x, size=64, mode='bilinear')
         x = F.relu(self.deconv7(x))
         x = self.deconv8(x)
         return x
-    
+
 
 class AutoEncoder(nn.Module):
     
@@ -172,6 +277,8 @@ class AutoEncoder(nn.Module):
         super().__init__(*args, **kwargs)
         self.encoder = EncConv()
         self.decoder = DecConv()
+
+        
 
     def forward(self, x):
         x = self.encoder(x)
@@ -186,6 +293,7 @@ class Teacher(nn.Module):
             self.pdn = PDN_M()
         elif size =='S':
             self.pdn = PDN_S()
+        self.pdn.apply(weights_init)
         
 
     def forward(self, x):
@@ -202,10 +310,18 @@ class Student(nn.Module):
             self.pdn = PDN_M()
         elif size =='S':
             self.pdn = PDN_S()
+        self.pdn.apply(weights_init)
+
     def forward(self, x):
         pdn_out = self.pdn(x)
         ae_out = self.ae(x)
         return pdn_out,ae_out
     
 
-
+if __name__ == '__main__':
+    from torchsummary import summary
+    import torch
+    # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = AutoEncoder()
+    model = model.to('cuda')
+    summary(model, (3, 256, 256))
