@@ -2,7 +2,12 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 from torchsummary import summary
-from torchvision.models.resnet import ResNet,load_state_dict_from_url,Bottleneck,model_urls
+try:
+    from torch.hub import load_state_dict_from_url
+except ImportError:
+    from torch.utils.model_zoo import load_url as load_state_dict_from_url
+
+from torchvision.models.resnet import ResNet, Bottleneck
 import pdb
 
 def weights_init(m):
@@ -65,12 +70,11 @@ class WideResNet(ResNet):
 def _resnet(arch, block, layers, pretrained, progress, **kwargs):
     model = WideResNet(block, layers, **kwargs)
     if pretrained:
-        state_dict = load_state_dict_from_url(model_urls[arch],
-                                              progress=progress)
+        state_dict = load_state_dict_from_url(url, progress=progress)
         model.load_state_dict(state_dict)
     return model
 
-def wide_resnet101_2(pretrained=False, progress=True, **kwargs):
+def wide_resnet101_2(arch, pretrained=False, progress=True, **kwargs):
     r"""Wide ResNet-101-2 model from
     `"Wide Residual Networks" <https://arxiv.org/pdf/1605.07146.pdf>`_
 
@@ -84,6 +88,7 @@ def wide_resnet101_2(pretrained=False, progress=True, **kwargs):
         progress (bool): If True, displays a progress bar of the download to stderr
     """
     kwargs['width_per_group'] = 64 * 2
+    url = torchvision.models.get_weight(arch).url
     return _resnet('wide_resnet101_2', Bottleneck, [3, 4, 23, 3],
                    pretrained, progress, **kwargs)
 
@@ -91,7 +96,7 @@ def wide_resnet101_2(pretrained=False, progress=True, **kwargs):
 
 class PDN_S(nn.Module):
 
-    def __init__(self) -> None:
+    def __init__(self, last_kernel_size=384) -> None:
         super().__init__()
         # Layer Name Stride Kernel Size Number of Kernels Padding Activation
         # Conv-1 1×1 4×4 128 3 ReLU
@@ -104,7 +109,7 @@ class PDN_S(nn.Module):
         self.conv1 = nn.Conv2d(3, 128, kernel_size=4, stride=1, padding=3)
         self.conv2 = nn.Conv2d(128, 256, kernel_size=4, stride=1, padding=3)
         self.conv3 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
-        self.conv4 = nn.Conv2d(256, 384, kernel_size=4, stride=1, padding=0)
+        self.conv4 = nn.Conv2d(256, last_kernel_size, kernel_size=4, stride=1, padding=0)
         self.avgpool1 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
         self.avgpool2 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
 
@@ -119,7 +124,7 @@ class PDN_S(nn.Module):
     
 class PDN_M(nn.Module):
 
-    def __init__(self) -> None:
+    def __init__(self, last_kernel_size=384) -> None:
         super().__init__()
         # Layer Name Stride Kernel Size Number of Kernels Padding Activation
         # Conv-1 1×1 4×4 256 3 ReLU
@@ -134,8 +139,8 @@ class PDN_M(nn.Module):
         self.conv2 = nn.Conv2d(256, 512, kernel_size=4, stride=1, padding=3)
         self.conv3 = nn.Conv2d(512, 512, kernel_size=1, stride=1, padding=0)
         self.conv4 = nn.Conv2d(512, 512, kernel_size=3, stride=1, padding=1)
-        self.conv5 = nn.Conv2d(512, 384, kernel_size=4, stride=1, padding=0)
-        self.conv6 = nn.Conv2d(384, 384, kernel_size=1, stride=1, padding=0)
+        self.conv5 = nn.Conv2d(512, last_kernel_size, kernel_size=4, stride=1, padding=0)
+        self.conv6 = nn.Conv2d(last_kernel_size, last_kernel_size, kernel_size=1, stride=1, padding=0)
         self.avgpool1 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
         self.avgpool2 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
 
@@ -305,17 +310,15 @@ class Student(nn.Module):
     
     def __init__(self,size, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.ae = AutoEncoder()
         if size =='M':
-            self.pdn = PDN_M()
+            self.pdn = PDN_M(last_kernel_size=768) #The student network has the same architecture,but 768 kernels instead of 384 in the Conv-5 and Conv-6 layers.
         elif size =='S':
-            self.pdn = PDN_S()
+            self.pdn = PDN_S(last_kernel_size=768) #The student network has the same architecture, but 768 kernels instead of 384 in the Conv-4 layer
         self.pdn.apply(weights_init)
 
     def forward(self, x):
         pdn_out = self.pdn(x)
-        ae_out = self.ae(x)
-        return pdn_out,ae_out
+        return pdn_out
     
 
 if __name__ == '__main__':

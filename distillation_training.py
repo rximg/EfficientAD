@@ -48,7 +48,8 @@ from torchvision import transforms
 
 class DistillationTraining(object):
 
-    def __init__(self,imagenet_dir,channel_size,batch_size,save_path,normalize_iter,train_iter=60000,resize=512,model_size='S') -> None:
+    def __init__(self,imagenet_dir,channel_size,batch_size,save_path,normalize_iter,train_iter=60000,resize=512,model_size='S', 
+                wide_resnet_101_arch="Wide_ResNet101_2_Weights.IMAGENET1K_V2", print_freq=25) -> None:
         self.channel_size = channel_size
         self.mean = torch.empty(channel_size)
         self.std = torch.empty(channel_size)
@@ -58,8 +59,13 @@ class DistillationTraining(object):
         self.model_size = model_size
         self.batch_size = batch_size
         self.normalize_iter = normalize_iter
+        self.wide_resnet_101_arch = wide_resnet_101_arch
+        self.print_freq = print_freq
         self.data_transforms = transforms.Compose([
                         transforms.Resize((resize, resize),),
+                        transforms.RandomGrayscale(p=0.1), #6: Convert Idist to gray scale with a probability of 0.1 and 18: Convert Idist to gray scale with a probability of 0.1
+                        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                            std=[0.229, 0.224, 0.225]) #Comments on Algorithm 3: We use the image normalization of the pretrained models of torchvision [44].
                         transforms.ToTensor(),
                         ])
 
@@ -78,7 +84,7 @@ class DistillationTraining(object):
         self.std = x.std(dim=[0,2,3],keepdim=True).cuda()
 
     def load_pretrain(self):
-        self.pretrain = wide_resnet101_2(pretrained=True)
+        self.pretrain = wide_resnet101_2(self.wide_resnet_101_arch, pretrained=True)
         # self.pretrain.load_state_dict(torch.load('pretrained_model.pth'))
         self.pretrain.eval()
         self.pretrain = self.pretrain.cuda()
@@ -113,6 +119,7 @@ class DistillationTraining(object):
         optimizer = torch.optim.Adam(teacher.parameters(), lr=0.0001, weight_decay=0.00001)
         # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1, last_epoch=int(self.train_iter*0.9))
         best_loss = 1000
+        loss_accum = 0
         for iteration in range(self.train_iter):
             ldist = next(iterator)[0]
             ldist = ldist.cuda()
@@ -120,14 +127,17 @@ class DistillationTraining(object):
             loss = self.compute_mse_loss(teacher,ldist)
             loss.backward()
             optimizer.step()
+            loss_accum += loss.item()
             # scheduler.step()
-            if iteration % 100 ==0:
-                print('iter:{},loss:{}'.format(iteration,loss.item()))
-                if loss.item() < best_loss or best_loss == 1000:
-                    best_loss = loss.item()
+            if (iteration+1) % self.print_freq == 0:
+                loss_mean = loss_accum/self.print_freq
+                print('iter:{},loss:{}'.format(iteration, loss_mean))
+                if loss_mean < best_loss or best_loss == 1000:
+                    best_loss = loss_mean
                     # save teacher
                     print('save best teacher at loss {}'.format(best_loss))
                     torch.save(teacher.state_dict(), '{}/best_teacher.pth'.format(self.save_path))
+                loss_accum = 0
 
         # save teacher
         torch.save(teacher.state_dict(), '{}/last_teacher.pth'.format(self.save_path))
@@ -142,5 +152,6 @@ if __name__ == '__main__':
         os.makedirs(save_path)
     distillation_training = DistillationTraining(
         imagenet_dir,channel_size,8,save_path,
-        normalize_iter=500,train_iter=60000)
+        normalize_iter=500,train_iter=60000, 
+        wide_resnet_101_arch="Wide_ResNet101_2_Weights.IMAGENET1K_V2")
     distillation_training.train()
