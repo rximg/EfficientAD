@@ -108,7 +108,11 @@ class Reduced_Student_Teacher(object):
         
         # normal_t_out = self.compute_normalize_teacher_out(t_pdn_out)
         normal_t_out = (t_pdn_out-self.channel_mean)/self.channel_std
-        s_pdn_out,s_ae_out = student(image)
+        s_pdn_out = student(image)
+
+        #17: Set YST ∈ R 384×64×64 to the first 384 channels of Y S ∈ R 768×64×64
+        s_pdn_out = s_pdn_out[:, :384, :, :]
+
         # Compute the squared difference between normal_t_out and s_pdn_out for each tuple (c, w, h) as DST c,w,h = (Yˆc,w,h − YSTc,w,h)2
         distance_s_t = torch.pow(normal_t_out-s_pdn_out,2)
         # pdb.set_trace()
@@ -123,9 +127,9 @@ class Reduced_Student_Teacher(object):
         # Choose a random pretraining image P ∈ R 3×256×256 from ImageNet [54]
         image_p = next(imagenet_iterator)
         # pdb.set_trace()
-        s_imagenet_out,_ = student(image_p[0].cuda())
+        s_imagenet_out = student(image_p[0].cuda())
         # Compute the loss LST = Lhard + (384 · 64 · 64)−1 P 384 c=1 k S(P)ck 2 F
-        N = (1/(c*h*w))*torch.sum(torch.pow(s_imagenet_out,2))
+        N = (1/(c*h*w))*torch.sum(torch.pow(s_imagenet_out[:, :384, :, :],2))
         # print('loss Lhard {}, loss N {}'.format(Lhard,N))
         loss_st = Lhard + N
         return loss_st
@@ -138,13 +142,17 @@ class Reduced_Student_Teacher(object):
         # Compute the normalized teacher output Yˆ given by Yˆc = σc−1(Yc0 − µc) for each c ∈ {1, . . . , 384}
         # normal_t_out = self.compute_normalize_teacher_out(t_out)
         normal_t_out = (t_out-self.channel_mean)/self.channel_std
-        s_pdn_out,s_ae_out = student(aug_img)
+        s_pdn_out = student(aug_img)
+
+        #33: Set YSTAE ∈ R 384×64×64 to the last 384 channels of YS ∈ R 768×64×64
+        s_pdn_out = s_pdn_out[:, -384:, :, :]
+
         # pdb.set_trace()
         # Compute the squared difference between Yˆ and Y A for each tuple (c, w, h) as DAEc,w,h = (Yˆc,w,h − YAc,w,h)2
         distance_ae = torch.pow(normal_t_out-ae_out,2)
         
         # Compute the squared difference between YA and YSTAE for each tuple (c, w, h) as DSTAEc,w,h = (YAc,w,h − Yc,w,hSTAE)2
-        distance_stae = torch.pow(ae_out-s_ae_out,2)
+        distance_stae = torch.pow(ae_out-s_pdn_out,2)
 
         #Compute the loss LAE as the mean of all elements DAE c,w,h of DAE
         LAE = torch.mean(distance_ae)
@@ -187,7 +195,6 @@ class Reduced_Student_Teacher(object):
         # scheduler = StepLR(optimizer, step_size=1, gamma=0.1, last_epoch=int(epochs*0.9))
         best_loss = 100000
         for epoch in range(epochs):
-
             for i_batch, sample_batched in enumerate(dataloader):
                 optimizer.zero_grad()
                 image = sample_batched['image'].cuda()
@@ -229,12 +236,15 @@ class Reduced_Student_Teacher(object):
         for i_batch, sample_batched in enumerate(dataloader):
             sample_batched = sample_batched['image'].cuda()
             t_out = self.teacher(sample_batched)
-            s_out,_ = self.student(sample_batched)
+            s_out = self.student(sample_batched)
             ae_out = self.ae(sample_batched)
+            #48: Split the student output into Y ST ∈ R 384×64×64 and Y STAE ∈ R 384×64×64 as above
+            y_st = s_out[:, :384, :, :]
+            y_stae = s_out[:, -384:, :, :]
             # normal_t_out = self.compute_normalize_teacher_out(t_out)
             normal_t_out = (t_out-self.channel_mean)/self.channel_std
-            distance_s_t = torch.pow(normal_t_out-s_out,2)
-            distance_stae = torch.pow(ae_out-s_out,2)
+            distance_s_t = torch.pow(normal_t_out-y_st,2)
+            distance_stae = torch.pow(ae_out-y_stae,2)
             # Compute the anomaly maps MST = 384−1 P 384 c=1 Dc ST and MAE = 384−1 P 384 c=1 Dc STAE
             anomaly_map_st_by_c = torch.mean(distance_s_t,dim=1)
             anomaly_map_stae_by_c = torch.mean(distance_stae,dim=1)

@@ -64,11 +64,17 @@ class Inference(object):
         img = sample_batched['image']
         img = img.cuda()
         teacher_output = self.teacher(img)
-        student_output,stae_output = self.student(img)
+        student_output = self.student(img)
         ae_output = self.ae(img)
+        #3: Split the student output into Y ST ∈ R 384×64×64 and Y STAE ∈ R 384×64×64 as above
+        y_st = student_output[:, :384, :, :]
+        y_stae = student_output[:, -384:, :, :]
+
         normal_teacher_output = (teacher_output-self.channel_mean)/self.channel_std
-        distance_st = torch.pow(student_output-ae_output,2)
-        distance_stae = torch.pow(normal_teacher_output-stae_output,2)
+
+        distance_st = torch.pow(normal_teacher_output-y_st,2)
+        distance_stae = torch.pow(ae_output-y_stae,2)
+
         fmap_st = torch.mean(distance_st,dim=1,keepdim=True)
         fmap_stae = torch.mean(distance_stae,dim=1,keepdim=True)
         # fmap_st = fmap_st.view(1,1,64,64)
@@ -77,8 +83,8 @@ class Inference(object):
         fmap_st = F.interpolate(fmap_st,size=(256,256),mode='bilinear')
         fmap_stae = F.interpolate(fmap_stae,size=(256,256),mode='bilinear')
         # fmap_st = fmap_st.view(256,256)
-        normalized_mst = 0.1*(fmap_st-self.qa_st)*(self.qb_st-self.qa_st)
-        normalized_mae = 0.1*(fmap_stae-self.qa_ae)*(self.qb_ae-self.qa_ae)
+        normalized_mst = (0.1*(fmap_st-self.qa_st))/(self.qb_st-self.qa_st)
+        normalized_mae = (0.1*(fmap_stae-self.qa_ae))/(self.qb_ae-self.qa_ae)
         combined_map = 0.5*normalized_mst+0.5*normalized_mae
         image_score = torch.max(combined_map)
         return combined_map,image_score
