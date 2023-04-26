@@ -18,6 +18,12 @@ def weights_init(m):
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
 
+def imagenet_norm_batch(x):
+    mean = torch.tensor([0.485, 0.456, 0.406])[None, :, None, None]
+    std = torch.tensor([0.229, 0.224, 0.225])[None, :, None, None]
+    x_norm = (x - mean) / (std + 1e-11)
+    return x_norm
+
 class WideResNet(ResNet):
 
 
@@ -30,6 +36,7 @@ class WideResNet(ResNet):
         self.target_dim = target_dim
         
     def _forward_impl(self, x):
+        x = imagenet_norm_batch(x) #Comments on Algorithm 3: We use the image normalization of the pretrained models of torchvision [44].
         # See note [TorchScript super()]
         x = self.conv1(x)
         x = self.bn1(x)
@@ -277,37 +284,33 @@ class DecConv(nn.Module):
 
 
 class AutoEncoder(nn.Module):
-    
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.encoder = EncConv()
         self.decoder = DecConv()
 
-        
-
     def forward(self, x):
+        x_norm = x = imagenet_norm_batch(x) #Comments on Algorithm 3: We use the image normalization of the pretrained models of torchvision [44].
         x = self.encoder(x)
         x = self.decoder(x)
         return x
         
 class Teacher(nn.Module):
-
     def __init__(self,size, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         if size =='M':
-            self.pdn = PDN_M()
+            self.pdn = PDN_M(last_kernel_size=384)
         elif size =='S':
-            self.pdn = PDN_S()
+            self.pdn = PDN_S(last_kernel_size=384)
         self.pdn.apply(weights_init)
-        
 
     def forward(self, x):
+        x = imagenet_norm_batch(x) #Comments on Algorithm 3: We use the image normalization of the pretrained models of torchvision [44].
         x = self.pdn(x)
         return x
     
 
 class Student(nn.Module):
-    
     def __init__(self,size, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         if size =='M':
@@ -317,6 +320,7 @@ class Student(nn.Module):
         self.pdn.apply(weights_init)
 
     def forward(self, x):
+        x = imagenet_norm_batch(x) #Comments on Algorithm 3: We use the image normalization of the pretrained models of torchvision [44].
         pdn_out = self.pdn(x)
         return pdn_out
     
