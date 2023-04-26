@@ -8,6 +8,7 @@ except ImportError:
     from torch.utils.model_zoo import load_url as load_state_dict_from_url
 
 from torchvision.models.resnet import ResNet, Bottleneck
+import torchvision
 import pdb
 
 def weights_init(m):
