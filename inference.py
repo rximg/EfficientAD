@@ -26,8 +26,9 @@ from PIL import Image
 import os
 class Inference(object):
 
-    def __init__(self,val_dir,model_path,model_size='S',resize=256) -> None:
+    def __init__(self,val_dir,model_path, result_path = 'data/result', model_size='S',resize=256) -> None:
         self.val_dir = val_dir
+        self.result_path = result_path
         self.teacher = Teacher(model_size)
         self.student = Student(model_size)
         self.ae = AutoEncoder()
@@ -102,9 +103,9 @@ class Inference(object):
             combined_map,image_score = self.infer_single(sample_batched)
             print(image_score.item())
             sorted_str = str(int(image_score.item()*10000)).rjust(6,'0')
-            if not os.path.exists('data/result'):
-                os.mkdir('data/result')
-            out_im_path = 'data/result/{}_{}_{}.png'.format(sorted_str,num,i_batch,image_score)
+            if not os.path.exists(self.result_path):
+                os.mkdir(self.result_path)
+            out_im_path = '{}/{}_{}_{}.png'.format(self.result_path, sorted_str,num,i_batch,image_score)
             
             out_im_np = combined_map[0,0,:,:].cpu().detach().numpy()
             out_im_np = (out_im_np-np.min(out_im_np))/(np.max(out_im_np)-np.min(out_im_np))
