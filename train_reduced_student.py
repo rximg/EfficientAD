@@ -51,7 +51,7 @@ class Reduced_Student_Teacher(object):
         self.data_transforms_imagenet = transforms.Compose([ #We obtain an image P ∈ R 3×256×256 from ImageNet by choosing a random image,
                         transforms.Resize((512, 512)), #resizing it to 512 × 512,
                         transforms.RandomGrayscale(p=0.3), #converting it to gray scale with a probability of 0.3
-                        transforms.CenterCrop((256,256)) # and cropping the center 256 × 256 pixels
+                        transforms.CenterCrop((256,256)), # and cropping the center 256 × 256 pixels
                         transforms.ToTensor(),
                         ])
 
