@@ -24,9 +24,7 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 class Reduced_Student_Teacher(object):
-
-
-    def __init__(self,mvtech_dir,imagenet_dir,ckpt_path,model_size='S',batch_size=8,channel_size=384,resize=256,fmap_size  = 256) -> None:
+    def __init__(self,mvtech_dir,imagenet_dir,ckpt_path,model_size='S',batch_size=1,channel_size=384,resize=256,fmap_size=256,print_freq=10) -> None:
         self.mvtech_dir = mvtech_dir
         self.imagenet_dir = imagenet_dir
         self.ckpt_path = ckpt_path
@@ -42,6 +40,7 @@ class Reduced_Student_Teacher(object):
         self.fmap_size = (fmap_size,fmap_size)
         self.channel_mean,self.channel_std = None,None
         self.batch_size = batch_size
+        self.print_freq = print_freq
         self.data_transforms = transforms.Compose([
                         transforms.Resize((resize, resize), Image.ANTIALIAS),
                         transforms.ToTensor(),
@@ -209,10 +208,10 @@ class Reduced_Student_Teacher(object):
                 loss = loss_st + LAE + LSTAE
                 loss.backward()
                 optimizer.step()
-                if i_batch % 10 == 0:
+                if i_batch % self.print_freq == 0:
                     print("epoch:{},batch:{},total_loss:{:.4f},loss_st:{:.4f},loss_ae:{:.4f},loss_stae:{:.4f}".format(epoch,i_batch,loss.item(),loss_st.item(),LAE.item(),LSTAE.item()))
             # scheduler.step()
-            if epoch % 10 == 0:
+            if epoch % self.print_freq == 0:
                 if loss.item() < best_loss:
                     best_loss = loss.item()
                     print('saving model in {}'.format(self.ckpt_path))
