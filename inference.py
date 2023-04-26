@@ -104,7 +104,7 @@ class Inference(object):
             print(image_score.item())
             sorted_str = str(int(image_score.item()*10000)).rjust(6,'0')
             if not os.path.exists(self.result_path):
-                os.mkdir(self.result_path)
+                os.makedirs(self.result_path)
             out_im_path = '{}/{}_{}_{}.png'.format(self.result_path, sorted_str,num,i_batch,image_score)
             
             out_im_np = combined_map[0,0,:,:].cpu().detach().numpy()
