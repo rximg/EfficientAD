@@ -64,8 +64,6 @@ class DistillationTraining(object):
         self.data_transforms = transforms.Compose([
                         transforms.Resize((resize, resize),),
                         transforms.RandomGrayscale(p=0.1), #6: Convert Idist to gray scale with a probability of 0.1 and 18: Convert Idist to gray scale with a probability of 0.1
-                        transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                            std=[0.229, 0.224, 0.225]) #Comments on Algorithm 3: We use the image normalization of the pretrained models of torchvision [44].
                         transforms.ToTensor(),
                         ])
 

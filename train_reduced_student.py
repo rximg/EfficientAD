@@ -49,6 +49,12 @@ class Reduced_Student_Teacher(object):
         self.gt_transforms = transforms.Compose([
                         transforms.Resize((resize, resize)),
                         transforms.ToTensor()])
+        self.data_transforms_imagenet = transforms.Compose([ #We obtain an image P ∈ R 3×256×256 from ImageNet by choosing a random image,
+                        transforms.Resize((512, 512)), #resizing it to 512 × 512,
+                        transforms.RandomGrayscale(p=0.3), #converting it to gray scale with a probability of 0.3
+                        transforms.CenterCrop((256,256)) # and cropping the center 256 × 256 pixels
+                        transforms.ToTensor(),
+                        ])
 
     def load_pretrain_teacher(self):
         self.teacher.load_state_dict(torch.load(self.ckpt_path+'/best_teacher.pth'))
@@ -186,7 +192,7 @@ class Reduced_Student_Teacher(object):
                         )
         dataloader = DataLoader(dataset,batch_size=self.batch_size,shuffle=True)
         print('load train dataset:length:{}'.format(len(dataset)))
-        imagenet = ImageNetDataset(imagenet_dir=self.imagenet_dir,transform=self.data_transforms)
+        imagenet = ImageNetDataset(imagenet_dir=self.imagenet_dir,transform=self.data_transforms_imagenet)
         imagenet_loader = DataLoader(imagenet,batch_size=1,shuffle=True)
         # len_traindata = len(dataset)
         imagenet_iterator = iter(imagenet_loader)
