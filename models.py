@@ -75,7 +75,7 @@ class WideResNet(ResNet):
         return target_features
 
 
-def _resnet(arch, block, layers, pretrained, progress, **kwargs):
+def _resnet(url, block, layers, pretrained, progress, **kwargs):
     model = WideResNet(block, layers, **kwargs)
     if pretrained:
         state_dict = load_state_dict_from_url(url, progress=progress)
@@ -97,7 +97,7 @@ def wide_resnet101_2(arch, pretrained=False, progress=True, **kwargs):
     """
     kwargs['width_per_group'] = 64 * 2
     url = torchvision.models.get_weight(arch).url
-    return _resnet('wide_resnet101_2', Bottleneck, [3, 4, 23, 3],
+    return _resnet(url, Bottleneck, [3, 4, 23, 3],
                    pretrained, progress, **kwargs)
 
 # print(summary(wide_resnet101_2().cuda(), (3, 512, 512)))
