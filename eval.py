@@ -24,18 +24,23 @@ import pdb
 import cv2
 from PIL import Image
 import os
+from tqdm import tqdm
+import os.path as osp
+from sklearn.metrics import roc_auc_score,average_precision_score
+
 class Inference(object):
 
-    def __init__(self,val_dir,model_path, result_path = 'data/result', model_size='S',resize=256) -> None:
-        self.val_dir = val_dir
-        self.result_path = result_path
+    def __init__(self,label,val_dir,model_path, result_path = 'data/result', model_size='S',resize=256) -> None:
+        self.label = label 
+        self.val_dir = osp.join(val_dir,label)
+        self.result_path = osp.join(result_path,label)
         self.teacher = Teacher(model_size)
         self.student = Student(model_size)
         self.ae = AutoEncoder()
         self.model_path = model_path
         self.load_model()
         self.data_transforms = transforms.Compose([
-                        transforms.Resize((resize, resize), Image.ANTIALIAS),
+                        transforms.Resize((resize, resize)),
                         transforms.ToTensor(),
                         ])
         self.gt_transforms = transforms.Compose([
@@ -44,8 +49,8 @@ class Inference(object):
 
     def load_model(self,):
         teacher_ckpt = torch.load(self.model_path+'/best_teacher.pth')
-        student_ckpt = torch.load(self.model_path+'/student.pth')
-        ae_ckpt = torch.load(self.model_path+'/autoencoder.pth')
+        student_ckpt = torch.load(self.model_path+'/{}_student.pth'.format(label))
+        ae_ckpt = torch.load(self.model_path+'/{}_autoencoder.pth'.format(label))
         # pdb.set_trace()
         self.teacher.load_state_dict(teacher_ckpt)
         self.student.load_state_dict(student_ckpt)
@@ -53,7 +58,7 @@ class Inference(object):
         self.teacher.cuda()
         self.student.cuda()
         self.ae.cuda()
-        quantiles = np.load(self.model_path+'/quantiles.npy',allow_pickle=True).item()
+        quantiles = np.load(self.model_path+'/{}_quantiles.npy'.format(label),allow_pickle=True).item()
         self.qa_st = torch.tensor(quantiles['qa_st']).cuda()
         self.qb_st = torch.tensor(quantiles['qb_st']).cuda()
         self.qa_ae = torch.tensor(quantiles['qa_ae']).cuda()
@@ -90,7 +95,7 @@ class Inference(object):
         image_score = torch.max(combined_map)
         return combined_map,image_score
 
-    def infer(self):
+    def eval(self):
         dataset = MVTecDataset(
                         root=self.val_dir,
                         transform=self.data_transforms,
@@ -98,33 +103,60 @@ class Inference(object):
                         phase='test'
                         )
         dataloader = DataLoader(dataset,batch_size=1,shuffle=True)
+        total_pixel_scores = torch.empty(0)
+        total_gt_pixel_scores = torch.empty(0)
         num = 0
-        for i_batch, sample_batched in enumerate(dataloader):
+        scores = []
+        gts = []
+        for i_batch, sample_batched in tqdm(enumerate(dataloader)):
+            gts.append(sample_batched['label'].item())
+            # pdb.set_trace()
+            total_gt_pixel_scores = torch.cat((total_gt_pixel_scores,sample_batched['gt'].view(-1)))
             combined_map,image_score = self.infer_single(sample_batched)
-            print(image_score.item())
+            scores.append(image_score.item())
+            total_pixel_scores = torch.cat((total_pixel_scores,combined_map.detach().cpu().view(-1)))
+            # pdb.set_trace()
+            # print("{:.4f}".format(image_score.item()),sample_batched['label'].item())
             sorted_str = str(int(image_score.item()*10000)).rjust(6,'0')
             if not os.path.exists(self.result_path):
                 os.makedirs(self.result_path)
             out_im_path = '{}/{}_{}_{}.png'.format(self.result_path, sorted_str,num,i_batch,image_score)
             
             out_im_np = combined_map[0,0,:,:].cpu().detach().numpy()
-            out_im_np = (out_im_np-np.min(out_im_np))/(np.max(out_im_np)-np.min(out_im_np))
-            out_im_np = (out_im_np*255).astype(np.uint8)
+            # pdb.set_trace()
+            # out_im_np = (out_im_np-np.min(out_im_np))/(np.max(out_im_np)-np.min(out_im_np))
+            out_im_np = ((1-out_im_np)*255).astype(np.uint8)
+            out_im_np_rgb = cv2.cvtColor(out_im_np,cv2.COLOR_GRAY2RGB)
 
             origin_img = sample_batched['image'][0].cpu().detach().numpy()
             origin_img = np.transpose(origin_img,(1,2,0))
             origin_img_np = (origin_img*255).astype(np.uint8)
             # origin_img_np = np.array(origin_img)
             color_fmap = cv2.applyColorMap(out_im_np, cv2.COLORMAP_JET)
-            out_hstack = np.hstack((origin_img_np,color_fmap))
+            # color_fmap = cv2.cvtColor(color_fmap,cv2.COLOR_BGR2RGB)
+            origin_with_fmap = cv2.addWeighted(origin_img_np,0.5,color_fmap,0.5,0)
+            gt_np = sample_batched['gt'][0].cpu().detach().numpy()
+            gt_rgb = cv2.cvtColor((gt_np[0,:,:]*255).astype(np.uint8),cv2.COLOR_GRAY2RGB)
+            # pdb.set_trace()
+            out_hstack = np.hstack((origin_img_np,gt_rgb,origin_with_fmap,out_im_np_rgb))
             cv2.imwrite(out_im_path,out_hstack)
+        gtnp = np.array(gts)
+        scorenp = np.array(scores)
+        total_gt_pixel_scoresnp = total_gt_pixel_scores.cpu().detach().numpy().astype('uint8')
+        total_pixel_scoresnp = total_pixel_scores.cpu().detach().numpy()
+        # pdb.set_trace()
+        auroc = roc_auc_score(gtnp,scorenp)
+        auroc_pixel = roc_auc_score(total_gt_pixel_scoresnp,total_pixel_scoresnp)
+        ap_pixel = average_precision_score(total_gt_pixel_scoresnp,total_pixel_scoresnp)
+        ap = average_precision_score(gtnp,scorenp)
+        print("label:{},auroc:{:.4f},auroc_pixel:{:.4f},ap:{:.4f},ap_pixel:{:.4f}".format(self.label,auroc,auroc_pixel,ap,ap_pixel))        
 
 
             
         
 if __name__ == "__main__":
-    val_dir = 'data/MVTec_AD/bottle/'
+    val_dir = 'data/MVTec_AD/'
     model_path = 'ckpt'
-    infer = Inference(val_dir,model_path)
-    infer.infer()
-        
+    label = "bottle"
+    infer = Inference(label,val_dir,model_path)
+    infer.eval()

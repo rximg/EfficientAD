@@ -12,6 +12,7 @@ import tqdm
 import os.path as osp
 import pdb
 import os
+from itertools import cycle
 
 from PIL import Image
 
@@ -24,8 +25,9 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 class Reduced_Student_Teacher(object):
-    def __init__(self,mvtech_dir,imagenet_dir,ckpt_path,model_size='S',batch_size=1,channel_size=384,resize=256,fmap_size=256,print_freq=10) -> None:
-        self.mvtech_dir = mvtech_dir
+    def __init__(self,label,mvtech_dir,imagenet_dir,ckpt_path,model_size='S',batch_size=1,channel_size=384,resize=256,fmap_size=256,print_freq=10) -> None:
+        self.label = label
+        self.mvtech_dir = osp.join(mvtech_dir,label)
         self.imagenet_dir = imagenet_dir
         self.ckpt_path = ckpt_path
         self.student = Student(model_size)
@@ -42,7 +44,7 @@ class Reduced_Student_Teacher(object):
         self.batch_size = batch_size
         self.print_freq = print_freq
         self.data_transforms = transforms.Compose([
-                        transforms.Resize((resize, resize), Image.ANTIALIAS),
+                        transforms.Resize((resize, resize)),
                         transforms.ToTensor(),
                         ])
         self.gt_transforms = transforms.Compose([
@@ -166,7 +168,7 @@ class Reduced_Student_Teacher(object):
         return LAE,LSTAE
     
     def caculate_channel_std(self,dataloader):
-        channel_std_ckpt = "{}/good_dataset_channel_std.pth".format(self.ckpt_path)
+        channel_std_ckpt = "{}/{}_good_dataset_channel_std.pth".format(self.ckpt_path,self.label)
         if osp.isfile(channel_std_ckpt):
             channel_std = torch.load(channel_std_ckpt)
             self.channel_mean = channel_std['mean'].cuda()
@@ -194,7 +196,7 @@ class Reduced_Student_Teacher(object):
         imagenet = ImageNetDataset(imagenet_dir=self.imagenet_dir,transform=self.data_transforms_imagenet)
         imagenet_loader = DataLoader(imagenet,batch_size=1,shuffle=True)
         # len_traindata = len(dataset)
-        imagenet_iterator = iter(imagenet_loader)
+        imagenet_iterator = cycle(iter(imagenet_loader))
         self.caculate_channel_std(dataloader)
         optimizer = optim.Adam(list(self.student.parameters())+list(self.ae.parameters()),lr=0.0001,weight_decay=0.00001)
         # scheduler = StepLR(optimizer, step_size=1, gamma=0.1, last_epoch=int(epochs*0.9))
@@ -215,19 +217,19 @@ class Reduced_Student_Teacher(object):
                 if loss.item() < best_loss:
                     best_loss = loss.item()
                     print('saving model in {}'.format(self.ckpt_path))
-                    torch.save(self.student.state_dict(),'{}/student.pth'.format(self.ckpt_path))
-                    torch.save(self.ae.state_dict(),'{}/autoencoder.pth'.format(self.ckpt_path))
-        qa_st,qb_st,qa_ae,qb_ae = self.val()
-        quantiles = {
-            'qa_st':qa_st,
-            'qb_st':qb_st,
-            'qa_ae':qa_ae,
-            'qb_ae':qb_ae,
-            'std':self.channel_std.cpu().numpy(),
-            'mean':self.channel_mean.cpu().numpy()
-        }
-        #save quantiles numpy type
-        np.save('{}/quantiles.npy'.format(self.ckpt_path),quantiles)
+                    torch.save(self.student.state_dict(),'{}/{}_student.pth'.format(self.ckpt_path,self.label))
+                    torch.save(self.ae.state_dict(),'{}/{}_autoencoder.pth'.format(self.ckpt_path,self.label))
+                    qa_st,qb_st,qa_ae,qb_ae = self.val()
+                    quantiles = {
+                        'qa_st':qa_st,
+                        'qb_st':qb_st,
+                        'qa_ae':qa_ae,
+                        'qb_ae':qb_ae,
+                        'std':self.channel_std.cpu().numpy(),
+                        'mean':self.channel_mean.cpu().numpy()
+                    }
+                    #save quantiles numpy type
+                    np.save('{}/{}_quantiles.npy'.format(self.ckpt_path,self.label),quantiles)
             
     def val(self):
         xst,xae = [],[]
@@ -279,11 +281,12 @@ if __name__ == '__main__':
     if not os.path.exists(ckpt):
         os.makedirs(ckpt)
     rst = Reduced_Student_Teacher(
-        mvtech_dir="data/MVTec_AD/bottle/",
+        label='grid',
+        mvtech_dir="data/MVTec_AD/",
         imagenet_dir="data/ImageNet/",
         ckpt_path=ckpt,
     )
-    rst.train(epochs=200)
+    rst.train(epochs=100)
 
 
 

@@ -13,6 +13,7 @@ import tqdm
 from torch.optim.lr_scheduler import StepLR
 from models import wide_resnet101_2
 from torchvision import transforms
+from itertools import cycle
 # Require: A pretrained feature extractor Ψ : R 3×W×H → R 384×64×64.
 # Require: A sequence of distillation training images Idist
 # 1: Randomly initialize a teacher network T : R 3×256×256 → R 384×64×64 with an architecture as given in Table 5 or 6
@@ -100,7 +101,7 @@ class DistillationTraining(object):
         self.load_pretrain()
         imagenet_dataset = ImageNetDataset(self.imagenet_dir, self.data_transforms)
         dataloader = DataLoader(imagenet_dataset, batch_size=self.batch_size, shuffle=True)
-        iterator = iter(dataloader)
+        iterator = cycle(iter(dataloader))
         teacher = Teacher(self.model_size)
         teacher = teacher.cuda()
         mean_param_path = '{}/imagenet_channel_std.pth'.format(self.save_path)
@@ -149,7 +150,7 @@ if __name__ == '__main__':
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     distillation_training = DistillationTraining(
-        imagenet_dir,channel_size,8,save_path,
+        imagenet_dir,channel_size,4,save_path,
         normalize_iter=500,train_iter=60000, 
         wide_resnet_101_arch="Wide_ResNet101_2_Weights.IMAGENET1K_V2")
     distillation_training.train()
