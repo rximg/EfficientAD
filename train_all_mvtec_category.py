@@ -1,12 +1,12 @@
 from train_reduced_student import Reduced_Student_Teacher
 import os
 categorys = [
-    'bottle',
-    'cable',
-    'capsule',
-    'carpet',
-    'grid',
-    'hazelnut',
+    # 'bottle',
+    # 'cable',
+    # 'capsule',
+    # 'carpet',
+    # 'grid',
+    # 'hazelnut',
     'leather',
     'metal_nut',
     'pill',
@@ -28,7 +28,6 @@ if __name__ == '__main__':
             mvtech_dir="data/MVTec_AD/",
             imagenet_dir="data/ImageNet/",
             ckpt_path=ckpt,
-        
             batch_size=8,
         )
-        rst.train()
+        rst.train(200)

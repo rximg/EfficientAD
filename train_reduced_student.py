@@ -44,7 +44,7 @@ class Reduced_Student_Teacher(object):
         self.batch_size = batch_size
         self.print_freq = print_freq
         self.data_transforms = transforms.Compose([
-                        transforms.Resize((resize, resize)),
+                        transforms.Resize((resize, resize),Image.ANTIALIAS),
                         transforms.ToTensor(),
                         ])
         self.gt_transforms = transforms.Compose([
@@ -200,6 +200,12 @@ class Reduced_Student_Teacher(object):
         self.caculate_channel_std(dataloader)
         optimizer = optim.Adam(list(self.student.parameters())+list(self.ae.parameters()),lr=0.0001,weight_decay=0.00001)
         # scheduler = StepLR(optimizer, step_size=1, gamma=0.1, last_epoch=int(epochs*0.9))
+
+    # optimizer = torch.optim.Adam(itertools.chain(student.parameters(),
+    #                                              autoencoder.parameters()),
+    #                              lr=1e-4, weight_decay=1e-5)
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=int(0.95 * epochs), gamma=0.1)
         best_loss = 100000
         for epoch in range(epochs):
             for i_batch, sample_batched in enumerate(dataloader):
@@ -212,7 +218,7 @@ class Reduced_Student_Teacher(object):
                 optimizer.step()
                 if i_batch % self.print_freq == 0:
                     print("epoch:{},batch:{},total_loss:{:.4f},loss_st:{:.4f},loss_ae:{:.4f},loss_stae:{:.4f}".format(epoch,i_batch,loss.item(),loss_st.item(),LAE.item(),LSTAE.item()))
-            # scheduler.step()
+            scheduler.step()
             if epoch % self.print_freq == 0:
                 if loss.item() < best_loss:
                     best_loss = loss.item()
@@ -281,10 +287,12 @@ if __name__ == '__main__':
     if not os.path.exists(ckpt):
         os.makedirs(ckpt)
     rst = Reduced_Student_Teacher(
-        label='grid',
+        label='hazelnut',
         mvtech_dir="data/MVTec_AD/",
         imagenet_dir="data/ImageNet/",
         ckpt_path=ckpt,
+
+        batch_size=8,
     )
     rst.train(epochs=100)
 

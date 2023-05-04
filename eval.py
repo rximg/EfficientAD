@@ -17,6 +17,8 @@ import random
 from torch import optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
+
+import shutil
 from torchvision import transforms
 from models import Teacher,Student,AutoEncoder
 from data_loader import MVTecDataset
@@ -30,8 +32,11 @@ from sklearn.metrics import roc_auc_score,average_precision_score
 
 class Inference(object):
 
-    def __init__(self,label,val_dir,model_path, result_path = 'data/result', model_size='S',resize=256) -> None:
+    def __init__(self,label,val_dir,model_path,ratio=0.1,score_in_mid_size=224, result_path = 'data/result', model_size='S',resize=256) -> None:
         self.label = label 
+        self.ratio = ratio
+        self.resize = resize
+        self.score_in_mid_size = score_in_mid_size
         self.val_dir = osp.join(val_dir,label)
         self.result_path = osp.join(result_path,label)
         self.teacher = Teacher(model_size)
@@ -40,7 +45,7 @@ class Inference(object):
         self.model_path = model_path
         self.load_model()
         self.data_transforms = transforms.Compose([
-                        transforms.Resize((resize, resize)),
+                        transforms.Resize((resize, resize),Image.ANTIALIAS),
                         transforms.ToTensor(),
                         ])
         self.gt_transforms = transforms.Compose([
@@ -89,10 +94,15 @@ class Inference(object):
         fmap_st = F.interpolate(fmap_st,size=(256,256),mode='bilinear')
         fmap_stae = F.interpolate(fmap_stae,size=(256,256),mode='bilinear')
         # fmap_st = fmap_st.view(256,256)
-        normalized_mst = (0.1*(fmap_st-self.qa_st))/(self.qb_st-self.qa_st)
-        normalized_mae = (0.1*(fmap_stae-self.qa_ae))/(self.qb_ae-self.qa_ae)
+        normalized_mst = (self.ratio*(fmap_st-self.qa_st))/(self.qb_st-self.qa_st)
+        normalized_mae = (self.ratio*(fmap_stae-self.qa_ae))/(self.qb_ae-self.qa_ae)
         combined_map = 0.5*normalized_mst+0.5*normalized_mae
-        image_score = torch.max(combined_map)
+        score_start = (self.resize-self.score_in_mid_size)//2
+        # pdb.set_trace()
+        image_score = torch.max(combined_map[:,:,
+            score_start:score_start+self.score_in_mid_size,
+            score_start:score_start+self.score_in_mid_size
+        ])
         return combined_map,image_score
 
     def eval(self):
@@ -108,9 +118,19 @@ class Inference(object):
         num = 0
         scores = []
         gts = []
-        for i_batch, sample_batched in tqdm(enumerate(dataloader)):
-            gts.append(sample_batched['label'].item())
+        counter = 0
+        print(self.result_path)
+        if os.path.exists(self.result_path):
+            shutil.rmtree(self.result_path)
             # pdb.set_trace()
+        os.makedirs(self.result_path)
+        
+        for i_batch, sample_batched in tqdm(enumerate(dataloader)):
+            # pdb.set_trace()
+            # counter +=1 
+            # if counter>20:
+            #     break
+            gts.append(sample_batched['label'].item())
             total_gt_pixel_scores = torch.cat((total_gt_pixel_scores,sample_batched['gt'].view(-1)))
             combined_map,image_score = self.infer_single(sample_batched)
             scores.append(image_score.item())
@@ -118,19 +138,20 @@ class Inference(object):
             # pdb.set_trace()
             # print("{:.4f}".format(image_score.item()),sample_batched['label'].item())
             sorted_str = str(int(image_score.item()*10000)).rjust(6,'0')
-            if not os.path.exists(self.result_path):
-                os.makedirs(self.result_path)
+            
             out_im_path = '{}/{}_{}_{}.png'.format(self.result_path, sorted_str,num,i_batch,image_score)
             
             out_im_np = combined_map[0,0,:,:].cpu().detach().numpy()
             # pdb.set_trace()
             # out_im_np = (out_im_np-np.min(out_im_np))/(np.max(out_im_np)-np.min(out_im_np))
-            out_im_np = ((1-out_im_np)*255).astype(np.uint8)
+            out_im_np = ((out_im_np).clip(0,1)*255).astype(np.uint8)
+            # print(out_im_np.min(),out_im_np.max(),sample_batched['label'].item())
             out_im_np_rgb = cv2.cvtColor(out_im_np,cv2.COLOR_GRAY2RGB)
 
             origin_img = sample_batched['image'][0].cpu().detach().numpy()
             origin_img = np.transpose(origin_img,(1,2,0))
             origin_img_np = (origin_img*255).astype(np.uint8)
+            origin_img_np = cv2.cvtColor(origin_img_np,cv2.COLOR_RGB2BGR)
             # origin_img_np = np.array(origin_img)
             color_fmap = cv2.applyColorMap(out_im_np, cv2.COLORMAP_JET)
             # color_fmap = cv2.cvtColor(color_fmap,cv2.COLOR_BGR2RGB)
@@ -157,6 +178,6 @@ class Inference(object):
 if __name__ == "__main__":
     val_dir = 'data/MVTec_AD/'
     model_path = 'ckpt'
-    label = "bottle"
-    infer = Inference(label,val_dir,model_path)
+    label = "wood"
+    infer = Inference(label,val_dir,model_path,ratio=1)
     infer.eval()
