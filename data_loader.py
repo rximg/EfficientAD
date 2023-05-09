@@ -79,12 +79,15 @@ class MVTecDataset(Dataset):
                 img_paths.sort()
                 gt_paths.sort()
                 img_tot_paths.extend(img_paths)
+                if len(gt_paths)==0:
+                    gt_paths = [0]*len(img_paths)
+                
                 gt_tot_paths.extend(gt_paths)
                 tot_labels.extend([1]*len(img_paths))
                 tot_types.extend([defect_type]*len(img_paths))
 
         assert len(img_tot_paths) == len(gt_tot_paths), "Something wrong with test and ground truth pair!"
-        
+
         return img_tot_paths, gt_tot_paths, tot_labels, tot_types
 
     def __len__(self):
@@ -122,7 +125,15 @@ class ImageNetDataset(Dataset):
         self.dataset = ImageFolder(self.imagenet_dir, transform=self.transform)
 
     def __len__(self):
-        return len(self.dataset)
+        return 10000
 
     def __getitem__(self, idx):
-        return self.dataset[idx]
+        return self.dataset[idx][0]
+    
+def load_infinite(loader):
+    iterator = iter(loader)
+    while True:
+        try:
+            yield next(iterator)
+        except StopIteration:
+            iterator = iter(loader)

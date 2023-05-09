@@ -180,7 +180,7 @@ class EncConv(nn.Module):
         self.enconv4 = nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1)
         self.enconv5 = nn.Conv2d(64, 64, kernel_size=4, stride=2, padding=1)
         self.enconv6 = nn.Conv2d(64, 64, kernel_size=8, stride=1, padding=0)
-        self.apply(weights_init)
+        # self.apply(weights_init)
 
     def forward(self, x):
         # pdb.set_trace()
@@ -255,7 +255,7 @@ class DecConv(nn.Module):
         self.dropout4 = nn.Dropout(p=0.2)
         self.dropout5 = nn.Dropout(p=0.2)
         self.dropout6 = nn.Dropout(p=0.2)
-        self.apply(weights_init)
+        # self.apply(weights_init)
 
 
     def forward(self, x):
@@ -303,7 +303,7 @@ class Teacher(nn.Module):
             self.pdn = PDN_M(last_kernel_size=384)
         elif size =='S':
             self.pdn = PDN_S(last_kernel_size=384)
-        self.pdn.apply(weights_init)
+        # self.pdn.apply(weights_init)
 
     def forward(self, x):
         x = imagenet_norm_batch(x) #Comments on Algorithm 3: We use the image normalization of the pretrained models of torchvision [44].
@@ -318,7 +318,7 @@ class Student(nn.Module):
             self.pdn = PDN_M(last_kernel_size=768) #The student network has the same architecture,but 768 kernels instead of 384 in the Conv-5 and Conv-6 layers.
         elif size =='S':
             self.pdn = PDN_S(last_kernel_size=768) #The student network has the same architecture, but 768 kernels instead of 384 in the Conv-4 layer
-        self.pdn.apply(weights_init)
+        # self.pdn.apply(weights_init)
 
     def forward(self, x):
         x = imagenet_norm_batch(x) #Comments on Algorithm 3: We use the image normalization of the pretrained models of torchvision [44].

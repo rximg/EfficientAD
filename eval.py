@@ -45,7 +45,7 @@ class Inference(object):
         self.model_path = model_path
         self.load_model()
         self.data_transforms = transforms.Compose([
-                        transforms.Resize((resize, resize),Image.ANTIALIAS),
+                        transforms.Resize((resize, resize)),
                         transforms.ToTensor(),
                         ])
         self.gt_transforms = transforms.Compose([
@@ -54,8 +54,8 @@ class Inference(object):
 
     def load_model(self,):
         teacher_ckpt = torch.load(self.model_path+'/best_teacher.pth')
-        student_ckpt = torch.load(self.model_path+'/{}_student.pth'.format(label))
-        ae_ckpt = torch.load(self.model_path+'/{}_autoencoder.pth'.format(label))
+        student_ckpt = torch.load(self.model_path+'/{}_student.pth'.format(self.label))
+        ae_ckpt = torch.load(self.model_path+'/{}_autoencoder.pth'.format(self.label))
         # pdb.set_trace()
         self.teacher.load_state_dict(teacher_ckpt)
         self.student.load_state_dict(student_ckpt)
@@ -63,7 +63,10 @@ class Inference(object):
         self.teacher.cuda()
         self.student.cuda()
         self.ae.cuda()
-        quantiles = np.load(self.model_path+'/{}_quantiles.npy'.format(label),allow_pickle=True).item()
+        self.teacher.eval()
+        self.student.eval()
+        self.ae.eval()
+        quantiles = np.load(self.model_path+'/{}_quantiles.npy'.format(self.label),allow_pickle=True).item()
         self.qa_st = torch.tensor(quantiles['qa_st']).cuda()
         self.qb_st = torch.tensor(quantiles['qb_st']).cuda()
         self.qa_ae = torch.tensor(quantiles['qa_ae']).cuda()
@@ -74,9 +77,10 @@ class Inference(object):
     def infer_single(self,sample_batched):
         img = sample_batched['image']
         img = img.cuda()
-        teacher_output = self.teacher(img)
-        student_output = self.student(img)
-        ae_output = self.ae(img)
+        with torch.no_grad():
+            teacher_output = self.teacher(img)
+            student_output = self.student(img)
+            ae_output = self.ae(img)
         #3: Split the student output into Y ST ∈ R 384×64×64 and Y STAE ∈ R 384×64×64 as above
         y_st = student_output[:, :384, :, :]
         y_stae = student_output[:, -384:, :, :]
@@ -103,6 +107,7 @@ class Inference(object):
             score_start:score_start+self.score_in_mid_size,
             score_start:score_start+self.score_in_mid_size
         ])
+        # image_score = torch.max(combined_map)
         return combined_map,image_score
 
     def eval(self):
@@ -118,35 +123,27 @@ class Inference(object):
         num = 0
         scores = []
         gts = []
-        counter = 0
         print(self.result_path)
         if os.path.exists(self.result_path):
             shutil.rmtree(self.result_path)
-            # pdb.set_trace()
         os.makedirs(self.result_path)
         
         for i_batch, sample_batched in tqdm(enumerate(dataloader)):
-            # pdb.set_trace()
-            # counter +=1 
-            # if counter>20:
-            #     break
             gts.append(sample_batched['label'].item())
             total_gt_pixel_scores = torch.cat((total_gt_pixel_scores,sample_batched['gt'].view(-1)))
             combined_map,image_score = self.infer_single(sample_batched)
             scores.append(image_score.item())
             total_pixel_scores = torch.cat((total_pixel_scores,combined_map.detach().cpu().view(-1)))
-            # pdb.set_trace()
-            # print("{:.4f}".format(image_score.item()),sample_batched['label'].item())
             sorted_str = str(int(image_score.item()*10000)).rjust(6,'0')
             
             out_im_path = '{}/{}_{}_{}.png'.format(self.result_path, sorted_str,num,i_batch,image_score)
             
             out_im_np = combined_map[0,0,:,:].cpu().detach().numpy()
-            # pdb.set_trace()
-            # out_im_np = (out_im_np-np.min(out_im_np))/(np.max(out_im_np)-np.min(out_im_np))
+
             out_im_np = ((out_im_np).clip(0,1)*255).astype(np.uint8)
-            # print(out_im_np.min(),out_im_np.max(),sample_batched['label'].item())
             out_im_np_rgb = cv2.cvtColor(out_im_np,cv2.COLOR_GRAY2RGB)
+            out_im_thresh = cv2.threshold(out_im_np, 100, 255, cv2.THRESH_BINARY )[1]
+            out_im_thresh = cv2.cvtColor(out_im_thresh,cv2.COLOR_GRAY2RGB)
 
             origin_img = sample_batched['image'][0].cpu().detach().numpy()
             origin_img = np.transpose(origin_img,(1,2,0))
@@ -159,7 +156,7 @@ class Inference(object):
             gt_np = sample_batched['gt'][0].cpu().detach().numpy()
             gt_rgb = cv2.cvtColor((gt_np[0,:,:]*255).astype(np.uint8),cv2.COLOR_GRAY2RGB)
             # pdb.set_trace()
-            out_hstack = np.hstack((origin_img_np,gt_rgb,origin_with_fmap,out_im_np_rgb))
+            out_hstack = np.hstack((origin_img_np,gt_rgb,origin_with_fmap,out_im_np_rgb,out_im_thresh))
             cv2.imwrite(out_im_path,out_hstack)
         gtnp = np.array(gts)
         scorenp = np.array(scores)
@@ -167,6 +164,9 @@ class Inference(object):
         total_pixel_scoresnp = total_pixel_scores.cpu().detach().numpy()
         # pdb.set_trace()
         auroc = roc_auc_score(gtnp,scorenp)
+        if total_gt_pixel_scoresnp.max()==0:
+            print("label:{},auroc:{:.4f}".format(self.label,auroc))
+            return
         auroc_pixel = roc_auc_score(total_gt_pixel_scoresnp,total_pixel_scoresnp)
         ap_pixel = average_precision_score(total_gt_pixel_scoresnp,total_pixel_scoresnp)
         ap = average_precision_score(gtnp,scorenp)
@@ -176,8 +176,11 @@ class Inference(object):
             
         
 if __name__ == "__main__":
+    # val_dir = 'data/uniad224data/'
+    # model_path = 'ckptS_T'
+    # label = "HC_35IL1CROP"
     val_dir = 'data/MVTec_AD/'
-    model_path = 'ckpt'
-    label = "wood"
-    infer = Inference(label,val_dir,model_path,ratio=1)
+    model_path = 'ckptSmall'
+    label = "capsule"
+    infer = Inference(label,val_dir,model_path,ratio=1,model_size='S')
     infer.eval()

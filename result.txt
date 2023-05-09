@@ -1,0 +1,34 @@
+EfficientM
+label:bottle,auroc:1.0000,auroc_pixel:0.9889,ap:1.0000,ap_pixel:0.7602
+label:cable,auroc:0.9786,auroc_pixel:0.9880,ap:0.9872,ap_pixel:0.7306
+label:capsule,auroc:0.9980,auroc_pixel:0.9907,ap:0.9996,ap_pixel:0.4107
+label:carpet,auroc:0.9944,auroc_pixel:0.9608,ap:0.9984,ap_pixel:0.5828
+label:grid,auroc:0.9983,auroc_pixel:0.9930,ap:0.9994,ap_pixel:0.3647
+label:hazelnut,auroc:0.9879,auroc_pixel:0.9857,ap:0.9926,ap_pixel:0.4436
+label:leather,auroc:1.0000,auroc_pixel:0.9960,ap:1.0000,ap_pixel:0.5457
+label:metal_nut,auroc:0.9936,auroc_pixel:0.9760,ap:0.9985,ap_pixel:0.7292
+label:pill,auroc:0.9894,auroc_pixel:0.9831,ap:0.9982,ap_pixel:0.5956
+label:screw,auroc:0.9447,auroc_pixel:0.9964,ap:0.9765,ap_pixel:0.3531
+label:tile,auroc:1.0000,auroc_pixel:0.9809,ap:1.0000,ap_pixel:0.7423
+label:toothbrush,auroc:0.9417,auroc_pixel:0.9872,ap:0.9739,ap_pixel:0.3321
+label:transistor,auroc:0.9992,auroc_pixel:0.9500,ap:0.9988,ap_pixel:0.6627
+label:wood,auroc:0.9939,auroc_pixel:0.9663,ap:0.9982,ap_pixel:0.6078
+label:zipper,auroc:0.9861,auroc_pixel:0.9892,ap:0.9962,ap_pixel:0.5695
+mean auroc:0.9870
+
+EfficientS
+label:bottle,auroc:1.0000,auroc_pixel:0.9883,ap:1.0000,ap_pixel:0.7826
+label:cable,auroc:0.9591,auroc_pixel:0.9842,ap:0.9754,ap_pixel:0.7023
+label:capsule,auroc:0.9928,auroc_pixel:0.9912,ap:0.9985,ap_pixel:0.4496
+label:carpet,auroc:0.9952,auroc_pixel:0.9693,ap:0.9986,ap_pixel:0.6035
+label:grid,auroc:0.9975,auroc_pixel:0.9915,ap:0.9991,ap_pixel:0.3900
+label:hazelnut,auroc:0.9736,auroc_pixel:0.9854,ap:0.9833,ap_pixel:0.4870
+label:leather,auroc:0.9966,auroc_pixel:0.9961,ap:0.9988,ap_pixel:0.5449
+label:metal_nut,auroc:0.9761,auroc_pixel:0.9681,ap:0.9921,ap_pixel:0.6461
+label:pill,auroc:0.9885,auroc_pixel:0.9862,ap:0.9980,ap_pixel:0.6878
+label:screw,auroc:0.9570,auroc_pixel:0.9956,ap:0.9847,ap_pixel:0.3400
+label:tile,auroc:1.0000,auroc_pixel:0.9812,ap:1.0000,ap_pixel:0.8013
+label:transistor,auroc:0.9975,auroc_pixel:0.9698,ap:0.9966,ap_pixel:0.7588
+label:wood,auroc:0.9886,auroc_pixel:0.9649,ap:0.9960,ap_pixel:0.6100
+label:zipper,auroc:0.9630,auroc_pixel:0.9849,ap:0.9853,ap_pixel:0.5163
+mean auroc:0.9851

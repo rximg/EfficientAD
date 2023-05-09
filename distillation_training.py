@@ -49,14 +49,14 @@ from itertools import cycle
 
 class DistillationTraining(object):
 
-    def __init__(self,imagenet_dir,channel_size,batch_size,save_path,normalize_iter,train_iter=60000,resize=512,model_size='S', 
+    def __init__(self,imagenet_dir,channel_size,batch_size,save_path,normalize_iter,epoches=10,resize=512,model_size='S', 
                 wide_resnet_101_arch="Wide_ResNet101_2_Weights.IMAGENET1K_V2", print_freq=25) -> None:
         self.channel_size = channel_size
         self.mean = torch.empty(channel_size)
         self.std = torch.empty(channel_size)
         self.save_path = save_path
         self.imagenet_dir = imagenet_dir
-        self.train_iter = train_iter
+        self.epoches = epoches
         self.model_size = model_size
         self.batch_size = batch_size
         self.normalize_iter = normalize_iter
@@ -69,7 +69,8 @@ class DistillationTraining(object):
                         ])
 
     def global_channel_normalize(self,dataloader):
-        iterator = iter(dataloader)
+        # iterator = iter(dataloader)
+        iterator = cycle(iter(dataloader)) 
         # for c in range(self.channel_size):
         # x_mean = torch.empty(0)
         # x_std = torch.empty(0)
@@ -90,8 +91,9 @@ class DistillationTraining(object):
         # print(summary(self.pretrain, (3, 512, 512)))
     
     def compute_mse_loss(self,teacher,ldist):
-        y = self.pretrain(ldist)#torch.Size([8, 384, 64, 64])
-        y = (y - self.mean)/self.std
+        with torch.no_grad():
+            y = self.pretrain(ldist)#torch.Size([8, 384, 64, 64])
+            y = (y - self.mean)/self.std
         ldistresize = F.interpolate(ldist, size=(256, 256), mode='bilinear', align_corners=False)
         y0 = teacher(ldistresize)
         loss = F.mse_loss(y,y0)
@@ -100,8 +102,9 @@ class DistillationTraining(object):
     def train(self,):
         self.load_pretrain()
         imagenet_dataset = ImageNetDataset(self.imagenet_dir, self.data_transforms)
-        dataloader = DataLoader(imagenet_dataset, batch_size=self.batch_size, shuffle=True)
-        iterator = cycle(iter(dataloader))
+        dataloader = DataLoader(imagenet_dataset, batch_size=self.batch_size, shuffle=True,num_workers=4, pin_memory=True)
+        data_len = len(imagenet_dataset)
+        self.train_iter  = self.epoches*data_len//self.batch_size
         teacher = Teacher(self.model_size)
         teacher = teacher.cuda()
         mean_param_path = '{}/imagenet_channel_std.pth'.format(self.save_path)
@@ -116,41 +119,49 @@ class DistillationTraining(object):
                 'std': self.std
             }, '{}/imagenet_channel_std.pth'.format(self.save_path))
         optimizer = torch.optim.Adam(teacher.parameters(), lr=0.0001, weight_decay=0.00001)
-        # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.1, last_epoch=int(self.train_iter*0.9))
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=int(0.95 * self.train_iter), gamma=0.1)
         best_loss = 1000
         loss_accum = 0
-        for iteration in range(self.train_iter):
-            ldist = next(iterator)[0]
-            ldist = ldist.cuda()
-            optimizer.zero_grad()
-            loss = self.compute_mse_loss(teacher,ldist)
-            loss.backward()
-            optimizer.step()
-            loss_accum += loss.item()
-            # scheduler.step()
-            if (iteration+1) % self.print_freq == 0:
-                loss_mean = loss_accum/self.print_freq
-                print('iter:{},loss:{}'.format(iteration, loss_mean))
-                if loss_mean < best_loss or best_loss == 1000:
-                    best_loss = loss_mean
-                    # save teacher
-                    print('save best teacher at loss {}'.format(best_loss))
-                    torch.save(teacher.state_dict(), '{}/best_teacher.pth'.format(self.save_path))
-                loss_accum = 0
+        iteration = 0
+        print('start train iter:{}'.format(self.train_iter))
+        for i in range(self.epoches):
+            for batch_index, batch_sample in enumerate(dataloader):
+                batch_sample = batch_sample.cuda()
+                teacher.train()
+                optimizer.zero_grad()
+                loss = self.compute_mse_loss(teacher,batch_sample)
+                loss.backward()
+                optimizer.step()
+                loss_accum += loss.item()
+                scheduler.step()
+                iteration+=1
+                if (iteration+1) % self.print_freq == 0 and iteration > 100:
+                    loss_mean = loss_accum/self.print_freq
+                    print('iter:{},loss:{:.4f}'.format(iteration, loss_mean))
+                    if loss_mean < best_loss or best_loss == 1000:
+                        best_loss = loss_mean
+                        # save teacher
+                        print('save best teacher at loss {}'.format(best_loss))
+                        teacher.eval()
+                        torch.save(teacher.state_dict(), '{}/best_teacher.pth'.format(self.save_path))
+                    loss_accum = 0
 
-        # save teacher
-        torch.save(teacher.state_dict(), '{}/last_teacher.pth'.format(self.save_path))
+            # save teacher
+            teacher.eval()
+            torch.save(teacher.state_dict(), '{}/last_teacher.pth'.format(self.save_path))
         
         
 
 if __name__ == '__main__':
     imagenet_dir = './data/ImageNet'
     channel_size = 384
-    save_path = './ckpt'
+    save_path = './ckptSmall'
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     distillation_training = DistillationTraining(
-        imagenet_dir,channel_size,4,save_path,
-        normalize_iter=500,train_iter=60000, 
+        imagenet_dir,channel_size,16,save_path,
+        normalize_iter=500,epoches=200, 
+        model_size='S',
         wide_resnet_101_arch="Wide_ResNet101_2_Weights.IMAGENET1K_V2")
     distillation_training.train()
