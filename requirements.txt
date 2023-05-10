@@ -4,3 +4,5 @@ torchaudio
 opencv-python
 torchsummary
 imgaug
+tqdm
+scikit-learn

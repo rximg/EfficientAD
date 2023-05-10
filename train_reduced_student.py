@@ -10,8 +10,12 @@ from torch.optim.lr_scheduler import StepLR
 from data_loader import TrainImageOnlyDataset,ImageNetDataset,MVTecDataset,load_infinite
 import tqdm
 import os.path as osp
+import shutil
+import cv2
 import pdb
 import os
+from sklearn.metrics import roc_auc_score,average_precision_score
+
 from itertools import cycle
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = False
@@ -27,7 +31,7 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 class Reduced_Student_Teacher(object):
-    def __init__(self,label,mvtech_dir,imagenet_dir,ckpt_path,model_size='S',batch_size=1,channel_size=384,resize=256,fmap_size=256,print_freq=100) -> None:
+    def __init__(self,label,mvtech_dir,imagenet_dir,ckpt_path,model_size='S',batch_size=1,channel_size=384,score_in_mid_size=224,resize=256,fmap_size=256,print_freq=100) -> None:
         self.label = label
         self.mvtech_dir = osp.join(mvtech_dir,label)
         self.imagenet_dir = imagenet_dir
@@ -40,6 +44,8 @@ class Reduced_Student_Teacher(object):
         self.ae = AutoEncoder()
         self.ae = self.ae.cuda()
         # self.ae.apply(weights_init)
+        self.score_in_mid_size=score_in_mid_size
+        self.resize = resize
         self.channel_size = channel_size
         self.fmap_size = (fmap_size,fmap_size)
         self.channel_mean,self.channel_std = None,None
@@ -165,13 +171,18 @@ class Reduced_Student_Teacher(object):
         optimizer = optim.Adam(list(self.student.parameters())+list(self.ae.parameters()),lr=0.0001,weight_decay=0.00001)
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=int(0.95 * iterations), gamma=0.1)
-        best_loss = 100000
+        best_auroc = 0
         dataloader = load_infinite(dataloader)
+        eval_dataset = MVTecDataset(
+                        root=self.mvtech_dir,
+                        transform=self.data_transforms,
+                        gt_transform=self.gt_transforms,
+                        phase='test'
+                        )
+        eval_dataloader = DataLoader(eval_dataset,batch_size=1,shuffle=True)
         print('start train iter:',iterations)
         for i_batch in range(iterations):
             sample_batched = next(dataloader)
-        # for epoch in range(epochs):
-        # for i_batch, sample_batched in enumerate(dataloader):
             image = sample_batched['image'].cuda()
             self.student.train()
             self.ae.train()
@@ -186,31 +197,73 @@ class Reduced_Student_Teacher(object):
             if i_batch % self.print_freq == 0:
                 print("label:{},batch:{}/{},loss_total:{:.4f},loss_st:{:.4f},loss_ae:{:.4f},loss_stae:{:.4f}".format(
                     self.label,i_batch,iterations,loss_total.item(),loss_st.item(),LAE.item(),LSTAE.item()))
-            # if i_batch % self.print_freq == 0:
-                if loss_total.item() < best_loss:
-                    best_loss = loss_total.item()
-                    print('saving model in {}'.format(self.ckpt_path))
-                    qa_st,qb_st,qa_ae,qb_ae = self.map_norm_quantiles()
+
+                self.qa_st,self.qb_st,self.qa_ae,self.qb_ae = self.map_norm_quantiles()
+                auroc = self.eval(eval_dataloader)
+                if auroc > best_auroc:
+                    best_auroc = auroc
+                    print('saving model in {} at auroc:{:.4f}'.format(self.ckpt_path,auroc))
                     torch.save(self.student.state_dict(),'{}/{}_student.pth'.format(self.ckpt_path,self.label))
                     torch.save(self.ae.state_dict(),'{}/{}_autoencoder.pth'.format(self.ckpt_path,self.label))
                     quantiles = {
-                        'qa_st':qa_st,
-                        'qb_st':qb_st,
-                        'qa_ae':qa_ae,
-                        'qb_ae':qb_ae,
+                        'qa_st':self.qa_st,
+                        'qb_st':self.qb_st,
+                        'qa_ae':self.qa_ae,
+                        'qb_ae':self.qb_ae,
                         'std':self.channel_std.cpu().numpy(),
                         'mean':self.channel_mean.cpu().numpy()
                     }
-                    #save quantiles numpy type
                     np.save('{}/{}_quantiles.npy'.format(self.ckpt_path,self.label),quantiles)
-            
+
+    def eval(self,eval_dataloader):
+        scores = []
+        gts = []
+        for sample_batched in tqdm.tqdm(eval_dataloader):
+            gts.append(sample_batched['label'].item())
+            combined_map,image_score = self.infer_single(sample_batched)
+            scores.append(image_score.item())
+        gtnp = np.array(gts)
+        scorenp = np.array(scores)
+        auroc = roc_auc_score(gtnp,scorenp)
+        return auroc
+
+    def infer_single(self,sample_batched):
+        img = sample_batched['image']
+        img = img.cuda()
+        with torch.no_grad():
+            teacher_output = self.teacher(img)
+            student_output = self.student(img)
+            ae_output = self.ae(img)
+        #3: Split the student output into Y ST ∈ R 384×64×64 and Y STAE ∈ R 384×64×64 as above
+        y_st = student_output[:, :384, :, :]
+        y_stae = student_output[:, -384:, :, :]
+
+        normal_teacher_output = (teacher_output-self.channel_mean)/self.channel_std
+
+        distance_st = torch.pow(normal_teacher_output-y_st,2)
+        distance_stae = torch.pow(ae_output-y_stae,2)
+
+        fmap_st = torch.mean(distance_st,dim=1,keepdim=True)
+        fmap_stae = torch.mean(distance_stae,dim=1,keepdim=True)
+        fmap_st = F.interpolate(fmap_st,size=(256,256),mode='bilinear')
+        fmap_stae = F.interpolate(fmap_stae,size=(256,256),mode='bilinear')
+        normalized_mst = (0.1*(fmap_st-self.qa_st))/(self.qb_st-self.qa_st)
+        normalized_mae = (0.1*(fmap_stae-self.qa_ae))/(self.qb_ae-self.qa_ae)
+        combined_map = 0.5*normalized_mst+0.5*normalized_mae
+        score_start = (self.resize-self.score_in_mid_size)//2
+        image_score = torch.max(combined_map[:,:,
+            score_start:score_start+self.score_in_mid_size,
+            score_start:score_start+self.score_in_mid_size
+        ])
+        return combined_map,image_score
+
     def map_norm_quantiles(self):
         xst,xae = [],[]
         dataset = MVTecDataset(
                         root=self.mvtech_dir,
                         transform=self.data_transforms,
                         gt_transform=self.gt_transforms,
-                        phase='test'
+                        phase='train'
                         )
         dataloader = DataLoader(dataset,batch_size=1,shuffle=True)
         self.student.eval()
@@ -229,52 +282,30 @@ class Reduced_Student_Teacher(object):
             normal_t_out = (t_out-self.channel_mean)/self.channel_std
             distance_s_t = torch.pow(normal_t_out-y_st,2)
             distance_stae = torch.pow(ae_out-y_stae,2)
-            # Compute the anomaly maps MST = 384−1 P 384 c=1 Dc ST and MAE = 384−1 P 384 c=1 Dc STAE
             anomaly_map_st_by_c = torch.mean(distance_s_t,dim=1)
             anomaly_map_stae_by_c = torch.mean(distance_stae,dim=1)
-            # Resize MST and MAE to 256 × 256 pixels using bilinear interpolation
             anomaly_map_st = F.interpolate(anomaly_map_st_by_c.unsqueeze(0),
                                             size=self.fmap_size,mode='bilinear')
             anomaly_map_ae = F.interpolate(anomaly_map_stae_by_c.unsqueeze(0),
                                             size=self.fmap_size,mode='bilinear')
-            # XST ← XST_ vec(MST) . Append to the sequence of local anomaly scores
             xst.append(anomaly_map_st.detach().cpu().numpy())
-            # XAE ← XAE_ vec(MAE) . Append to the sequence of local anomaly scores
             xae.append(anomaly_map_ae.detach().cpu().numpy())
-        # Compute the 0.9-quantile qa ST and the 0.995-quantile qb ST of the elements of XST.
-        # qa_st = torch.quantile(np.concatenate(xst),0.9)
-        # qb_st = torch.quantile(np.concatenate(xst),0.995)
         qa_st = np.percentile(np.concatenate(xst),90)
         qb_st = np.percentile(np.concatenate(xst),99.5)
-        # Compute the 0.9-quantile qa AE and the 0.995-quantile qb AE of the elements of XAE.
-        # qa_ae = torch.quantile(torch.cat(xae),0.9)
-        # qb_ae = torch.quantile(torch.cat(xae),0.995)
         qa_ae = np.percentile(np.concatenate(xae),90)
         qb_ae = np.percentile(np.concatenate(xae),99.5)
         return qa_st,qb_st,qa_ae,qb_ae
 
 if __name__ == '__main__':
-    # ckpt = 'ckptSself'
-    # if not os.path.exists(ckpt):
-    #     os.makedirs(ckpt)
-    # rst = Reduced_Student_Teacher(
-    #     label='jucan_fingerdirty_test',
-    #     mvtech_dir="data/uniad224data/",
-    #     imagenet_dir="data/ImageNet/",
-    #     ckpt_path=ckpt,
-    #     model_size='S',
-    #     batch_size=1,
-    # )
-    # rst.train(epochs=200)
-    ckpt = 'ckptM_T0508'
+    ckpt = 'ckptSmall'
     if not os.path.exists(ckpt):
         os.makedirs(ckpt)
     rst = Reduced_Student_Teacher(
-        label='HC_1743_finger_L2',
-        mvtech_dir="data/uniad224data/",
+        label='zipper',
+        mvtech_dir="data/MVTec_AD/",
         imagenet_dir="data/ImageNet/",
         ckpt_path=ckpt,
-        model_size='M',
+        model_size='S',
         batch_size=1,
     )
     rst.train(iterations=50000)

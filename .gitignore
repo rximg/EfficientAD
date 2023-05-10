@@ -3,3 +3,5 @@ data/
 *.pyc
 log.txt
 *.npy
+*.code-workspace
+*.yaml

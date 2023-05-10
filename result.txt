@@ -1,34 +1,250 @@
 EfficientM
+data/result/bottle
+83it [00:05, 14.49it/s]
 label:bottle,auroc:1.0000,auroc_pixel:0.9889,ap:1.0000,ap_pixel:0.7602
+tt:0.0095s
+data/result/cable
+150it [00:10, 14.46it/s]
 label:cable,auroc:0.9786,auroc_pixel:0.9880,ap:0.9872,ap_pixel:0.7306
+tt:0.0096s
+data/result/capsule
+132it [00:08, 15.00it/s]
 label:capsule,auroc:0.9980,auroc_pixel:0.9907,ap:0.9996,ap_pixel:0.4107
+tt:0.0096s
+data/result/carpet
+117it [00:07, 15.71it/s]
 label:carpet,auroc:0.9944,auroc_pixel:0.9608,ap:0.9984,ap_pixel:0.5828
+tt:0.0095s
+data/result/grid
+78it [00:03, 22.82it/s]
 label:grid,auroc:0.9983,auroc_pixel:0.9930,ap:0.9994,ap_pixel:0.3647
+tt:0.0095s
+data/result/hazelnut
+110it [00:06, 15.91it/s]
 label:hazelnut,auroc:0.9879,auroc_pixel:0.9857,ap:0.9926,ap_pixel:0.4436
+tt:0.0098s
+data/result/leather
+124it [00:07, 16.17it/s]
 label:leather,auroc:1.0000,auroc_pixel:0.9960,ap:1.0000,ap_pixel:0.5457
+tt:0.0095s
+data/result/metal_nut
+115it [00:04, 23.13it/s]
 label:metal_nut,auroc:0.9936,auroc_pixel:0.9760,ap:0.9985,ap_pixel:0.7292
+tt:0.0094s
+data/result/pill
+167it [00:08, 19.22it/s]
 label:pill,auroc:0.9894,auroc_pixel:0.9831,ap:0.9982,ap_pixel:0.5956
+tt:0.0095s
+data/result/screw
+160it [00:07, 22.35it/s]
 label:screw,auroc:0.9447,auroc_pixel:0.9964,ap:0.9765,ap_pixel:0.3531
+tt:0.0095s
+data/result/tile
+117it [00:06, 18.78it/s]
 label:tile,auroc:1.0000,auroc_pixel:0.9809,ap:1.0000,ap_pixel:0.7423
+tt:0.0095s
+data/result/toothbrush
+42it [00:02, 16.41it/s]
 label:toothbrush,auroc:0.9417,auroc_pixel:0.9872,ap:0.9739,ap_pixel:0.3321
+data/result/transistor
+100it [00:06, 15.62it/s]
 label:transistor,auroc:0.9992,auroc_pixel:0.9500,ap:0.9988,ap_pixel:0.6627
+tt:0.0095s
+data/result/wood
+79it [00:05, 15.27it/s]
 label:wood,auroc:0.9939,auroc_pixel:0.9663,ap:0.9982,ap_pixel:0.6078
+tt:0.0095s
+data/result/zipper
+151it [00:06, 22.91it/s]
 label:zipper,auroc:0.9861,auroc_pixel:0.9892,ap:0.9962,ap_pixel:0.5695
+tt:0.0095s
 mean auroc:0.9870
 
 EfficientS
+data/result/bottle
+83it [00:05, 15.07it/s]
 label:bottle,auroc:1.0000,auroc_pixel:0.9883,ap:1.0000,ap_pixel:0.7826
+tt:0.0053s
+data/result/cable
+150it [00:09, 15.21it/s]
 label:cable,auroc:0.9591,auroc_pixel:0.9842,ap:0.9754,ap_pixel:0.7023
+tt:0.0053s
+data/result/capsule
+132it [00:08, 15.79it/s]
 label:capsule,auroc:0.9928,auroc_pixel:0.9912,ap:0.9985,ap_pixel:0.4496
+tt:0.0053s
+data/result/carpet
+117it [00:07, 16.43it/s]
 label:carpet,auroc:0.9952,auroc_pixel:0.9693,ap:0.9986,ap_pixel:0.6035
+tt:0.0052s
+data/result/grid
+78it [00:03, 25.28it/s]
 label:grid,auroc:0.9975,auroc_pixel:0.9915,ap:0.9991,ap_pixel:0.3900
+tt:0.0052s
+data/result/hazelnut
+110it [00:06, 17.28it/s]
 label:hazelnut,auroc:0.9736,auroc_pixel:0.9854,ap:0.9833,ap_pixel:0.4870
+tt:0.0051s
+data/result/leather
+124it [00:07, 17.54it/s]
 label:leather,auroc:0.9966,auroc_pixel:0.9961,ap:0.9988,ap_pixel:0.5449
+tt:0.0051s
+data/result/metal_nut
+115it [00:04, 25.91it/s]
 label:metal_nut,auroc:0.9761,auroc_pixel:0.9681,ap:0.9921,ap_pixel:0.6461
+tt:0.0051s
+data/result/pill
+167it [00:07, 21.51it/s]
 label:pill,auroc:0.9885,auroc_pixel:0.9862,ap:0.9980,ap_pixel:0.6878
+tt:0.0052s
+data/result/screw
+160it [00:06, 25.34it/s]
 label:screw,auroc:0.9570,auroc_pixel:0.9956,ap:0.9847,ap_pixel:0.3400
+tt:0.0052s
+data/result/tile
+117it [00:05, 20.27it/s]
 label:tile,auroc:1.0000,auroc_pixel:0.9812,ap:1.0000,ap_pixel:0.8013
+tt:0.0052s
+data/result/toothbrush
+42it [00:02, 17.20it/s]
+data/result/transistor
+100it [00:06, 16.38it/s]
 label:transistor,auroc:0.9975,auroc_pixel:0.9698,ap:0.9966,ap_pixel:0.7588
+tt:0.0052s
+data/result/wood
+79it [00:04, 16.59it/s]
 label:wood,auroc:0.9886,auroc_pixel:0.9649,ap:0.9960,ap_pixel:0.6100
+tt:0.0052s
+data/result/zipper
+151it [00:05, 26.70it/s]
 label:zipper,auroc:0.9630,auroc_pixel:0.9849,ap:0.9853,ap_pixel:0.5163
+tt:0.0051s
 mean auroc:0.9851
+
+
+
+best auroc EfficientM
+data/result/bottle
+83it [00:05, 15.19it/s]
+label:bottle,auroc:1.0000,auroc_pixel:0.9842,ap:1.0000,ap_pixel:0.7465
+tt:0.0093s
+data/result/cable
+150it [00:10, 14.96it/s]
+label:cable,auroc:0.9934,auroc_pixel:0.9876,ap:0.9960,ap_pixel:0.7013
+tt:0.0095s
+data/result/capsule
+132it [00:08, 15.62it/s]
+label:capsule,auroc:0.9944,auroc_pixel:0.9903,ap:0.9988,ap_pixel:0.4248
+tt:0.0094s
+data/result/carpet
+117it [00:07, 15.82it/s]
+label:carpet,auroc:1.0000,auroc_pixel:0.9241,ap:1.0000,ap_pixel:0.2474
+tt:0.0096s
+data/result/grid
+78it [00:03, 24.51it/s]
+label:grid,auroc:0.9975,auroc_pixel:0.9820,ap:0.9991,ap_pixel:0.2904
+tt:0.0094s
+data/result/hazelnut
+110it [00:06, 16.17it/s]
+label:hazelnut,auroc:0.9832,auroc_pixel:0.9850,ap:0.9884,ap_pixel:0.4296
+tt:0.0096s
+data/result/leather
+124it [00:07, 16.64it/s]
+label:leather,auroc:0.9990,auroc_pixel:0.9927,ap:0.9996,ap_pixel:0.4173
+tt:0.0096s
+data/result/metal_nut
+115it [00:05, 22.79it/s]
+label:metal_nut,auroc:0.9951,auroc_pixel:0.9734,ap:0.9988,ap_pixel:0.6953
+tt:0.0099s
+data/result/pill
+167it [00:08, 19.75it/s]
+label:pill,auroc:0.9795,auroc_pixel:0.9788,ap:0.9963,ap_pixel:0.4818
+tt:0.0096s
+data/result/screw
+160it [00:06, 23.39it/s]
+label:screw,auroc:1.0000,auroc_pixel:0.1009,ap:1.0000,ap_pixel:0.0009
+tt:0.0096s
+data/result/tile
+117it [00:06, 19.37it/s]
+label:tile,auroc:1.0000,auroc_pixel:0.9638,ap:1.0000,ap_pixel:0.6129
+tt:0.0095s
+data/result/toothbrush
+42it [00:02, 16.52it/s]
+label:toothbrush,auroc:0.9861,auroc_pixel:0.9847,ap:0.9946,ap_pixel:0.3108
+tt:0.0094s
+data/result/transistor
+100it [00:06, 15.91it/s]
+label:transistor,auroc:0.9937,auroc_pixel:0.9273,ap:0.9908,ap_pixel:0.5539
+tt:0.0096s
+data/result/wood
+79it [00:04, 16.14it/s]
+label:wood,auroc:0.9982,auroc_pixel:0.9442,ap:0.9994,ap_pixel:0.4168
+tt:0.0095s
+data/result/zipper
+151it [00:06, 24.60it/s]
+label:zipper,auroc:0.9832,auroc_pixel:0.9880,ap:0.9952,ap_pixel:0.5677
+tt:0.0095s
+mean auroc:0.9936
+
+best auroc EfficientS
+data/result/bottle
+83it [00:05, 15.59it/s]
+label:bottle,auroc:1.0000,auroc_pixel:0.9834,ap:1.0000,ap_pixel:0.7563
+tt:0.0051s
+data/result/cable
+150it [00:09, 15.65it/s]
+label:cable,auroc:0.9696,auroc_pixel:0.9837,ap:0.9800,ap_pixel:0.7060
+tt:0.0052s
+data/result/capsule
+132it [00:08, 15.99it/s]
+label:capsule,auroc:0.9956,auroc_pixel:0.9906,ap:0.9990,ap_pixel:0.4540
+tt:0.0052s
+data/result/carpet
+117it [00:07, 16.70it/s]
+label:carpet,auroc:0.9940,auroc_pixel:0.9301,ap:0.9983,ap_pixel:0.2921
+tt:0.0052s
+data/result/grid
+78it [00:02, 26.84it/s]
+label:grid,auroc:1.0000,auroc_pixel:0.9800,ap:1.0000,ap_pixel:0.3253
+tt:0.0050s
+data/result/hazelnut
+110it [00:06, 16.91it/s]
+label:hazelnut,auroc:0.9239,auroc_pixel:0.9808,ap:0.9524,ap_pixel:0.4699
+tt:0.0051s
+data/result/leather
+124it [00:07, 17.34it/s]
+label:leather,auroc:0.9963,auroc_pixel:0.9932,ap:0.9987,ap_pixel:0.4698
+tt:0.0052s
+data/result/metal_nut
+115it [00:04, 25.37it/s]
+label:metal_nut,auroc:0.9907,auroc_pixel:0.9749,ap:0.9979,ap_pixel:0.7201
+tt:0.0052s
+data/result/pill
+167it [00:07, 21.12it/s]
+label:pill,auroc:0.9749,auroc_pixel:0.9814,ap:0.9956,ap_pixel:0.5910
+tt:0.0052s
+data/result/screw
+160it [00:06, 25.77it/s]
+label:screw,auroc:1.0000,auroc_pixel:0.1073,ap:1.0000,ap_pixel:0.0009
+tt:0.0053s
+data/result/tile
+117it [00:05, 20.66it/s]
+label:tile,auroc:0.9874,auroc_pixel:0.9518,ap:0.9956,ap_pixel:0.5050
+tt:0.0051s
+data/result/toothbrush
+42it [00:02, 17.18it/s]
+label:toothbrush,auroc:1.0000,auroc_pixel:0.9798,ap:1.0000,ap_pixel:0.3188
+tt:0.0051s
+data/result/transistor
+100it [00:06, 16.50it/s]
+label:transistor,auroc:0.9654,auroc_pixel:0.9366,ap:0.9528,ap_pixel:0.6180
+tt:0.0052s
+data/result/wood
+79it [00:04, 16.62it/s]
+label:wood,auroc:0.9904,auroc_pixel:0.9409,ap:0.9967,ap_pixel:0.3935
+tt:0.0052s
+data/result/zipper
+151it [00:05, 27.03it/s]
+label:zipper,auroc:0.9774,auroc_pixel:0.9859,ap:0.9928,ap_pixel:0.5595
+tt:0.0052s
+mean auroc:0.9844
