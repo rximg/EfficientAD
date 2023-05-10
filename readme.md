@@ -39,7 +39,7 @@ python train_reduced_student.py
 
 ## Some results
 
-| Model         | Dataset    | Official Paper | efficientad.py |
+| Model         | Dataset    | Official Paper | ours           |
 |---------------|------------|----------------|----------------|
 | EfficientAD-M | VisA       | 98.1           | pending        |
 | EfficientAD-M | Mvtec LOCO | 90.7           | pending        |
