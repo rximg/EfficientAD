@@ -36,6 +36,14 @@ python distillaion_training.py
 ```
 python train_reduced_student.py
 ```
+## Pretrain Weights
+#### 1. intall Git LFS
+https://git-lfs.github.com/
+#### 2. Pull LFS
+```
+cd EfficientAD
+git lfs pull
+```
 
 ## Some results
 
