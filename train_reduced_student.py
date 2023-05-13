@@ -7,7 +7,7 @@ import numpy as np
 from torchvision import transforms
 from models import Teacher,Student,AutoEncoder
 from torch.optim.lr_scheduler import StepLR
-from data_loader import TrainImageOnlyDataset,ImageNetDataset,MVTecDataset,load_infinite
+from data_loader import ImageNetDataset,MVTecDataset,load_infinite
 import tqdm
 import os.path as osp
 import shutil
@@ -21,7 +21,10 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.enabled = True
 from PIL import Image
-
+seed = 42
+torch.manual_seed(seed)
+np.random.seed(seed)
+random.seed(seed)
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Conv2d') != -1:
@@ -31,7 +34,7 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 class Reduced_Student_Teacher(object):
-    def __init__(self,label,mvtech_dir,imagenet_dir,ckpt_path,model_size='S',batch_size=1,channel_size=384,score_in_mid_size=224,resize=256,fmap_size=256,print_freq=100) -> None:
+    def __init__(self,label,mvtech_dir,imagenet_dir,ckpt_path,model_size='S',batch_size=1,channel_size=384,resize=256,print_freq=100) -> None:
         self.label = label
         self.mvtech_dir = osp.join(mvtech_dir,label)
         self.imagenet_dir = imagenet_dir
@@ -44,10 +47,10 @@ class Reduced_Student_Teacher(object):
         self.ae = AutoEncoder()
         self.ae = self.ae.cuda()
         # self.ae.apply(weights_init)
-        self.score_in_mid_size=score_in_mid_size
+        self.score_in_mid_size=int(0.9*resize)
         self.resize = resize
         self.channel_size = channel_size
-        self.fmap_size = (fmap_size,fmap_size)
+        self.fmap_size = (resize,resize)
         self.channel_mean,self.channel_std = None,None
         self.batch_size = batch_size
         self.print_freq = print_freq
@@ -61,7 +64,7 @@ class Reduced_Student_Teacher(object):
         self.data_transforms_imagenet = transforms.Compose([ #We obtain an image P ∈ R 3×256×256 from ImageNet by choosing a random image,
                         transforms.Resize((512, 512)), #resizing it to 512 × 512,
                         transforms.RandomGrayscale(p=0.3), #converting it to gray scale with a probability of 0.3
-                        transforms.CenterCrop((256,256)), # and cropping the center 256 × 256 pixels
+                        transforms.CenterCrop((resize,resize)), # and cropping the center 256 × 256 pixels
                         transforms.ToTensor(),
                         ])
 
@@ -81,19 +84,14 @@ class Reduced_Student_Teacher(object):
                 break
             num +=1
             ldist = item['image'].cuda()
-            # ldist = iteration['image'].cuda()
             y = self.teacher(ldist).detach().cpu()
-            # ymean = y.mean(dim=[2,3],keepdim=True)
-            # ystd = y.std(dim=[2,3],keepdim=True)
             x = torch.cat((x,y),0)
-            # x_std = torch.cat((x_std,y),0)
         self.channel_mean = x.mean(dim=[0,2,3],keepdim=True).cuda()
         self.channel_std = x.std(dim=[0,2,3],keepdim=True).cuda()
         return self.channel_mean,self.channel_std
 
     def choose_random_aug_image(self,image):
         aug_index = random.choice([1,2,3])
-        # Sample an augmentation coefficient λ from the uniform distribution U(0.8, 1.2)
         coefficient = random.uniform(0.8,1.2)
         if aug_index == 1:
             img_aug = transforms.functional.adjust_brightness(image,coefficient)
@@ -103,22 +101,19 @@ class Reduced_Student_Teacher(object):
             img_aug = transforms.functional.adjust_saturation(image,coefficient)
         return img_aug
 
-    # def squard_diffence(self,Y0,Y1):
-
     def loss_st(self,image,imagenet_iterator,teacher:Teacher,student:Student):
         with torch.no_grad():
             t_pdn_out = teacher(image)
-            b,c,h,w = t_pdn_out.shape
             normal_t_out = (t_pdn_out-self.channel_mean)/self.channel_std
         s_pdn_out = student(image)
-        s_pdn_out = s_pdn_out[:, :384, :, :]
+        s_pdn_out = s_pdn_out[:, :self.channel_size, :, :]
         distance_s_t = torch.pow(normal_t_out-s_pdn_out,2)
         dhard = torch.quantile(distance_s_t[:8,:,:,:],0.999)
         hard_data = distance_s_t[distance_s_t>=dhard]
         Lhard = torch.mean(hard_data)
         image_p = next(imagenet_iterator)
         s_imagenet_out = student(image_p[0].cuda())
-        N = torch.mean(torch.pow(s_imagenet_out[:, :384, :, :],2))
+        N = torch.mean(torch.pow(s_imagenet_out[:, :self.channel_size, :, :],2))
         loss_st = Lhard + N
         return loss_st
     
@@ -130,7 +125,7 @@ class Reduced_Student_Teacher(object):
             normal_t_out = (t_out-self.channel_mean)/self.channel_std
         ae_out = autoencoder(aug_img)
         s_pdn_out = student(aug_img)
-        s_pdn_out = s_pdn_out[:, 384:, :, :]
+        s_pdn_out = s_pdn_out[:, self.channel_size:, :, :]
         distance_ae = torch.pow(normal_t_out-ae_out,2)
         distance_stae = torch.pow(ae_out-s_pdn_out,2)
         LAE = torch.mean(distance_ae)
@@ -152,37 +147,42 @@ class Reduced_Student_Teacher(object):
             }
             torch.save(channel_std,channel_std_ckpt)
 
-    def train(self,iterations=70000):
-        # Initialize Adam [29] with a learning rate of 10−4 and a weight decay of 10−5 for the parameters of S and A
-
+    def load_datasets(self):
         dataset = MVTecDataset(
                         root=self.mvtech_dir,
                         transform=self.data_transforms,
                         gt_transform=self.gt_transforms,
                         phase='train'
                         )
-        dataloader = DataLoader(dataset,batch_size=self.batch_size,shuffle=True,num_workers=4, pin_memory=True)
+        train_dataloader = DataLoader(dataset,batch_size=self.batch_size,shuffle=True,num_workers=4, pin_memory=True)
+        train_dataloader = load_infinite(train_dataloader)
         print('load train dataset:length:{}'.format(len(dataset)))
         imagenet = ImageNetDataset(imagenet_dir=self.imagenet_dir,transform=self.data_transforms_imagenet)
         imagenet_loader = DataLoader(imagenet,batch_size=1,shuffle=True,num_workers=4, pin_memory=True)
         # len_traindata = len(dataset)
-        imagenet_iterator = cycle(iter(imagenet_loader))
-        self.caculate_channel_std(dataloader)
-        optimizer = optim.Adam(list(self.student.parameters())+list(self.ae.parameters()),lr=0.0001,weight_decay=0.00001)
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=int(0.95 * iterations), gamma=0.1)
-        best_auroc = 0
-        dataloader = load_infinite(dataloader)
+        imagenet_iterator = load_infinite(imagenet_loader)
         eval_dataset = MVTecDataset(
                         root=self.mvtech_dir,
                         transform=self.data_transforms,
                         gt_transform=self.gt_transforms,
-                        phase='test'
+                        phase='train'
                         )
         eval_dataloader = DataLoader(eval_dataset,batch_size=1,shuffle=True)
+
+        return train_dataloader,imagenet_iterator,eval_dataloader
+
+    def train(self,iterations=70000):
+        # Initialize Adam [29] with a learning rate of 10−4 and a weight decay of 10−5 for the parameters of S and A
+
+        train_dataloader,imagenet_iterator,eval_dataloader = self.load_datasets()
+        self.caculate_channel_std(train_dataloader)
+        optimizer = optim.Adam(list(self.student.parameters())+list(self.ae.parameters()),lr=0.0001,weight_decay=0.00001)
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer, step_size=int(0.95 * iterations), gamma=0.1)
+        best_auroc = 0
         print('start train iter:',iterations)
         for i_batch in range(iterations):
-            sample_batched = next(dataloader)
+            sample_batched = next(train_dataloader)
             image = sample_batched['image'].cuda()
             self.student.train()
             self.ae.train()
@@ -198,7 +198,7 @@ class Reduced_Student_Teacher(object):
                 print("label:{},batch:{}/{},loss_total:{:.4f},loss_st:{:.4f},loss_ae:{:.4f},loss_stae:{:.4f}".format(
                     self.label,i_batch,iterations,loss_total.item(),loss_st.item(),LAE.item(),LSTAE.item()))
 
-                self.qa_st,self.qb_st,self.qa_ae,self.qb_ae = self.map_norm_quantiles()
+                self.qa_st,self.qb_st,self.qa_ae,self.qb_ae = self.map_norm_quantiles(eval_dataloader)
                 auroc = self.eval(eval_dataloader)
                 if auroc > best_auroc:
                     best_auroc = auroc
@@ -235,8 +235,8 @@ class Reduced_Student_Teacher(object):
             student_output = self.student(img)
             ae_output = self.ae(img)
         #3: Split the student output into Y ST ∈ R 384×64×64 and Y STAE ∈ R 384×64×64 as above
-        y_st = student_output[:, :384, :, :]
-        y_stae = student_output[:, -384:, :, :]
+        y_st = student_output[:, :self.channel_size, :, :]
+        y_stae = student_output[:, -self.channel_size:, :, :]
 
         normal_teacher_output = (teacher_output-self.channel_mean)/self.channel_std
 
@@ -245,8 +245,8 @@ class Reduced_Student_Teacher(object):
 
         fmap_st = torch.mean(distance_st,dim=1,keepdim=True)
         fmap_stae = torch.mean(distance_stae,dim=1,keepdim=True)
-        fmap_st = F.interpolate(fmap_st,size=(256,256),mode='bilinear')
-        fmap_stae = F.interpolate(fmap_stae,size=(256,256),mode='bilinear')
+        fmap_st = F.interpolate(fmap_st,size=(self.resize,self.resize),mode='bilinear')
+        fmap_stae = F.interpolate(fmap_stae,size=(self.resize,self.resize),mode='bilinear')
         normalized_mst = (0.1*(fmap_st-self.qa_st))/(self.qb_st-self.qa_st)
         normalized_mae = (0.1*(fmap_stae-self.qa_ae))/(self.qb_ae-self.qa_ae)
         combined_map = 0.5*normalized_mst+0.5*normalized_mae
@@ -257,15 +257,8 @@ class Reduced_Student_Teacher(object):
         ])
         return combined_map,image_score
 
-    def map_norm_quantiles(self):
+    def map_norm_quantiles(self,dataloader):
         xst,xae = [],[]
-        dataset = MVTecDataset(
-                        root=self.mvtech_dir,
-                        transform=self.data_transforms,
-                        gt_transform=self.gt_transforms,
-                        phase='train'
-                        )
-        dataloader = DataLoader(dataset,batch_size=1,shuffle=True)
         self.student.eval()
         self.ae.eval()
         self.teacher.eval()
@@ -276,8 +269,8 @@ class Reduced_Student_Teacher(object):
                 s_out = self.student(sample_batched)
                 ae_out = self.ae(sample_batched)
             #48: Split the student output into Y ST ∈ R 384×64×64 and Y STAE ∈ R 384×64×64 as above
-            y_st = s_out[:, :384, :, :]
-            y_stae = s_out[:, 384:, :, :]
+            y_st = s_out[:, :self.channel_size, :, :]
+            y_stae = s_out[:, -self.channel_size:, :, :]
             # normal_t_out = self.compute_normalize_teacher_out(t_out)
             normal_t_out = (t_out-self.channel_mean)/self.channel_std
             distance_s_t = torch.pow(normal_t_out-y_st,2)
