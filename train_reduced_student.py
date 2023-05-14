@@ -7,12 +7,14 @@ import numpy as np
 from torchvision import transforms
 from models import Teacher,Student,AutoEncoder
 from torch.optim.lr_scheduler import StepLR
-from data_loader import ImageNetDataset,MVTecDataset,load_infinite
+import argparse
+from data_loader import load_infinite,get_AD_dataset
 import tqdm
 import os.path as osp
 import shutil
 import cv2
 import pdb
+import yaml
 import os
 from sklearn.metrics import roc_auc_score,average_precision_score
 
@@ -21,10 +23,33 @@ torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.enabled = True
 from PIL import Image
-seed = 42
-torch.manual_seed(seed)
-np.random.seed(seed)
-random.seed(seed)
+
+
+def get_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-c", '--config', type=str, required=True)
+    parser.add_argument('--category', type=str, default='')
+    parser.add_argument('--root_dir', type=str, default='')
+    parser.add_argument('--ckpt_dir', type=str, default='')    
+    parser.add_argument('--iterations', type=int, default=None)    
+    args = parser.parse_args()
+    return args
+
+def parse_args(args):
+    # if args.config:
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
+    if args.category!="":
+        config['category'] = args.category
+    if args.root_dir!="":
+        config['train']['root'] = args.root_dir
+        config['eval']['root'] = args.root_dir
+    if args.ckpt_dir!="":
+        config['ckpt_dir'] = args.ckpt_dir
+    if args.iterations:
+        config['train']['iterations'] = args.iterations
+    return config
+
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Conv2d') != -1:
@@ -34,11 +59,12 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 class Reduced_Student_Teacher(object):
-    def __init__(self,label,mvtech_dir,imagenet_dir,ckpt_path,model_size='S',batch_size=1,channel_size=384,resize=256,print_freq=100) -> None:
-        self.label = label
-        self.mvtech_dir = osp.join(mvtech_dir,label)
-        self.imagenet_dir = imagenet_dir
-        self.ckpt_path = ckpt_path
+    # def __init__(self,category,root_dir,imagenet_dir,ckpt_path,train_dataset_type='MVTec',model_size='S',batch_size=1,channel_size=384,resize=256,print_freq=100) -> None:
+    def __init__(self,config):
+        self.config = config
+        self.category = config['category']
+        self.ckpt_dir = config['ckpt_dir']
+        model_size = config['Model']['model_size']
         self.student = Student(model_size)
         self.student = self.student.cuda()
         # self.student.apply(weights_init)
@@ -47,13 +73,14 @@ class Reduced_Student_Teacher(object):
         self.ae = AutoEncoder()
         self.ae = self.ae.cuda()
         # self.ae.apply(weights_init)
+        resize = config['Model']['input_size']
         self.score_in_mid_size=int(0.9*resize)
         self.resize = resize
-        self.channel_size = channel_size
+        self.channel_size = config['Model']['channel_size']
         self.fmap_size = (resize,resize)
         self.channel_mean,self.channel_std = None,None
-        self.batch_size = batch_size
-        self.print_freq = print_freq
+        self.batch_size = config['Model']['batch_size']
+        self.print_freq = config['print_freq']
         self.data_transforms = transforms.Compose([
                         transforms.Resize((resize, resize)),
                         transforms.ToTensor(),
@@ -61,20 +88,29 @@ class Reduced_Student_Teacher(object):
         self.gt_transforms = transforms.Compose([
                         transforms.Resize((resize, resize)),
                         transforms.ToTensor()])
+        teacher_input = config['Datasets']['imagenet']['teacher_input']
+        grayscale_ratio = config['Datasets']['imagenet']['grayscale_ratio']
         self.data_transforms_imagenet = transforms.Compose([ #We obtain an image P ∈ R 3×256×256 from ImageNet by choosing a random image,
-                        transforms.Resize((512, 512)), #resizing it to 512 × 512,
-                        transforms.RandomGrayscale(p=0.3), #converting it to gray scale with a probability of 0.3
+                        transforms.Resize((teacher_input, teacher_input)), #resizing it to 512 × 512,
+                        transforms.RandomGrayscale(p=grayscale_ratio), #converting it to gray scale with a probability of 0.3
                         transforms.CenterCrop((resize,resize)), # and cropping the center 256 × 256 pixels
                         transforms.ToTensor(),
                         ])
+        self.set_seed(config['seed'])
+        
+
+    def set_seed(self,seed):
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
 
     def load_pretrain_teacher(self):
-        self.teacher.load_state_dict(torch.load(self.ckpt_path+'/best_teacher.pth'))
+        self.teacher.load_state_dict(torch.load(self.ckpt_dir+'/best_teacher.pth'))
         self.teacher = self.teacher.cuda()
         self.teacher.eval()
         for parameters in self.teacher.parameters():
             parameters.requires_grad = False
-        print('load teacher model from {}'.format(self.ckpt_path+'/best_teacher.pth'))
+        print('load teacher model from {}'.format(self.ckpt_dir+'/best_teacher.pth'))
 
     def global_channel_normalize(self,dataloader):
         num = 0
@@ -133,7 +169,7 @@ class Reduced_Student_Teacher(object):
         return LAE,LSTAE
     
     def caculate_channel_std(self,dataloader):
-        channel_std_ckpt = "{}/{}_good_dataset_channel_std.pth".format(self.ckpt_path,self.label)
+        channel_std_ckpt = "{}/{}_good_dataset_channel_std.pth".format(self.ckpt_dir,self.category)
         if osp.isfile(channel_std_ckpt):
             channel_std = torch.load(channel_std_ckpt)
             self.channel_mean = channel_std['mean'].cuda()
@@ -148,27 +184,33 @@ class Reduced_Student_Teacher(object):
             torch.save(channel_std,channel_std_ckpt)
 
     def load_datasets(self):
-        dataset = MVTecDataset(
-                        root=self.mvtech_dir,
+        dataset = get_AD_dataset(
+                        type=self.config['Datasets']['train']['type'],
+                        root=self.config['Datasets']['train']['root'],
                         transform=self.data_transforms,
                         gt_transform=self.gt_transforms,
-                        phase='train'
+                        phase='train',
+                        category=self.category
                         )
         train_dataloader = DataLoader(dataset,batch_size=self.batch_size,shuffle=True,num_workers=4, pin_memory=True)
         train_dataloader = load_infinite(train_dataloader)
         print('load train dataset:length:{}'.format(len(dataset)))
-        imagenet = ImageNetDataset(imagenet_dir=self.imagenet_dir,transform=self.data_transforms_imagenet)
+        imagenet = get_AD_dataset(
+                        type='ImageNet',
+                        root=self.config['Datasets']['imagenet']['root'],
+                        transform=self.data_transforms_imagenet,
+                        )
         imagenet_loader = DataLoader(imagenet,batch_size=1,shuffle=True,num_workers=4, pin_memory=True)
-        # len_traindata = len(dataset)
         imagenet_iterator = load_infinite(imagenet_loader)
-        eval_dataset = MVTecDataset(
-                        root=self.mvtech_dir,
+        eval_dataset = get_AD_dataset(
+                        type=self.config['Datasets']['train']['type'],
+                        root=self.config['Datasets']['train']['root'],
                         transform=self.data_transforms,
                         gt_transform=self.gt_transforms,
-                        phase='train'
-                        )
+                        phase='test',
+                        category=self.category
+        )
         eval_dataloader = DataLoader(eval_dataset,batch_size=1,shuffle=True)
-
         return train_dataloader,imagenet_iterator,eval_dataloader
 
     def train(self,iterations=70000):
@@ -196,15 +238,15 @@ class Reduced_Student_Teacher(object):
             scheduler.step()
             if i_batch % self.print_freq == 0:
                 print("label:{},batch:{}/{},loss_total:{:.4f},loss_st:{:.4f},loss_ae:{:.4f},loss_stae:{:.4f}".format(
-                    self.label,i_batch,iterations,loss_total.item(),loss_st.item(),LAE.item(),LSTAE.item()))
+                    self.category,i_batch,iterations,loss_total.item(),loss_st.item(),LAE.item(),LSTAE.item()))
 
                 self.qa_st,self.qb_st,self.qa_ae,self.qb_ae = self.map_norm_quantiles(eval_dataloader)
                 auroc = self.eval(eval_dataloader)
                 if auroc > best_auroc:
                     best_auroc = auroc
-                    print('saving model in {} at auroc:{:.4f}'.format(self.ckpt_path,auroc))
-                    torch.save(self.student.state_dict(),'{}/{}_student.pth'.format(self.ckpt_path,self.label))
-                    torch.save(self.ae.state_dict(),'{}/{}_autoencoder.pth'.format(self.ckpt_path,self.label))
+                    print('saving model in {} at auroc:{:.4f}'.format(self.ckpt_dir,auroc))
+                    torch.save(self.student.state_dict(),'{}/{}_student.pth'.format(self.ckpt_dir,self.category))
+                    torch.save(self.ae.state_dict(),'{}/{}_autoencoder.pth'.format(self.ckpt_dir,self.category))
                     quantiles = {
                         'qa_st':self.qa_st,
                         'qb_st':self.qb_st,
@@ -213,7 +255,7 @@ class Reduced_Student_Teacher(object):
                         'std':self.channel_std.cpu().numpy(),
                         'mean':self.channel_mean.cpu().numpy()
                     }
-                    np.save('{}/{}_quantiles.npy'.format(self.ckpt_path,self.label),quantiles)
+                    np.save('{}/{}_quantiles.npy'.format(self.ckpt_dir,self.category),quantiles)
 
     def eval(self,eval_dataloader):
         scores = []
@@ -290,21 +332,16 @@ class Reduced_Student_Teacher(object):
         return qa_st,qb_st,qa_ae,qb_ae
 
 if __name__ == '__main__':
-    ckpt = 'ckptSmall'
-    if not os.path.exists(ckpt):
-        os.makedirs(ckpt)
+
+    args = get_arguments()
+    config = parse_args(args)
+
+    if not os.path.exists(config['ckpt_dir']):
+        os.makedirs(config['ckpt_dir'])
     rst = Reduced_Student_Teacher(
-        label='zipper',
-        mvtech_dir="data/MVTec_AD/",
-        imagenet_dir="data/ImageNet/",
-        ckpt_path=ckpt,
-        model_size='S',
-        batch_size=1,
+        config=config
     )
-    rst.train(iterations=50000)
-
-
-
+    rst.train(iterations=config['Model']['iterations'])
 
 
         

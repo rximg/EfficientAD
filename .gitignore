@@ -4,4 +4,3 @@ data/
 log.txt
 *.npy
 *.code-workspace
-*.yaml

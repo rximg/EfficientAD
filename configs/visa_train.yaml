@@ -1,0 +1,33 @@
+Datasets:
+  train:
+    root: data/VisA_20220922/
+    type: VisA
+  eval:
+    root: data/VisA_20220922/
+    type: VisA
+  imagenet:
+    root: data/ImageNet/
+    type: ImageNet
+    teacher_input: 512
+    grayscale_ratio: 0.3
+
+
+Model:
+  checkpoints: ckptSmall/best_teacher.pth
+  model_size: S
+  batch_size: 1
+  channel_size: 384
+  input_size: 256
+  iterations: 50000
+  
+
+
+print_freq: 100
+
+category: candle
+normalized_ratio: 0.1
+combined_mst_ratio: 0.5
+combined_mae_ratio: 0.5
+checkpoints_type: auroc
+seed: 42
+ckpt_dir: ckptSmall

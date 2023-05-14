@@ -34,7 +34,7 @@ python distillaion_training.py
 
 #### 2. train the student network and autoencoder network
 ```
-python train_reduced_student.py
+python train_reduced_student.py  -c configs/mvtec_train.yaml
 ```
 ## Pretrain Weights
 #### 1. intall Git LFS

@@ -6,3 +6,4 @@ torchsummary
 imgaug
 tqdm
 scikit-learn
+pyyaml
