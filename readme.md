@@ -36,14 +36,22 @@ python distillaion_training.py
 ```
 python train_reduced_student.py
 ```
+## Pretrain Weights
+#### 1. intall Git LFS
+https://git-lfs.github.com/
+#### 2. Pull LFS
+```
+cd EfficientAD
+git lfs pull
+```
 
 ## Some results
 
-| Model         | Dataset    | Official Paper | efficientad.py |
+| Model         | Dataset    | Official Paper | ours           |
 |---------------|------------|----------------|----------------|
 | EfficientAD-M | VisA       | 98.1           | pending        |
 | EfficientAD-M | Mvtec LOCO | 90.7           | pending        |
-| EfficientAD-M | Mvtec AD   | 99.1           | 98.70          |
+| EfficientAD-M | Mvtec AD   | 99.1           | 99.36          |
 | EfficientAD-S | VisA       | 97.5           | pending        |
 | EfficientAD-S | Mvtec LOCO | 90.0           | pending        |
 | EfficientAD-S | Mvtec AD   | 98.8           | 98.51          |
