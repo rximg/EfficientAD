@@ -20,8 +20,8 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 def imagenet_norm_batch(x):
-    mean = torch.tensor([0.485, 0.456, 0.406])[None, :, None, None].cuda()
-    std = torch.tensor([0.229, 0.224, 0.225])[None, :, None, None].cuda()
+    mean = torch.tensor([0.485, 0.456, 0.406])[None, :, None, None].to('cuda')
+    std = torch.tensor([0.229, 0.224, 0.225])[None, :, None, None].to('cuda')
     x_norm = (x - mean) / (std + 1e-11)
     return x_norm
 
@@ -291,7 +291,7 @@ class AutoEncoder(nn.Module):
         self.decoder = DecConv()
 
     def forward(self, x):
-        x_norm = x = imagenet_norm_batch(x) #Comments on Algorithm 3: We use the image normalization of the pretrained models of torchvision [44].
+        x = imagenet_norm_batch(x) #Comments on Algorithm 3: We use the image normalization of the pretrained models of torchvision [44].
         x = self.encoder(x)
         x = self.decoder(x)
         return x
