@@ -1,4 +1,4 @@
-EfficientM
+MVtec EfficientM
 label:bottle,auroc:1.0000,auroc_pixel:0.9889,ap:1.0000,ap_pixel:0.7602
 label:cable,auroc:0.9786,auroc_pixel:0.9880,ap:0.9872,ap_pixel:0.7306
 label:capsule,auroc:0.9980,auroc_pixel:0.9907,ap:0.9996,ap_pixel:0.4107
@@ -16,7 +16,7 @@ label:wood,auroc:0.9939,auroc_pixel:0.9663,ap:0.9982,ap_pixel:0.6078
 label:zipper,auroc:0.9861,auroc_pixel:0.9892,ap:0.9962,ap_pixel:0.5695
 mean auroc:0.9870
 
-EfficientS
+MVtec EfficientS
 label:bottle,auroc:1.0000,auroc_pixel:0.9883,ap:1.0000,ap_pixel:0.7826
 label:cable,auroc:0.9591,auroc_pixel:0.9842,ap:0.9754,ap_pixel:0.7023
 label:capsule,auroc:0.9928,auroc_pixel:0.9912,ap:0.9985,ap_pixel:0.4496
@@ -33,7 +33,7 @@ label:wood,auroc:0.9886,auroc_pixel:0.9649,ap:0.9960,ap_pixel:0.6100
 label:zipper,auroc:0.9630,auroc_pixel:0.9849,ap:0.9853,ap_pixel:0.5163
 mean auroc:0.9851
 
-best auroc checkpoint EfficientM
+MVtec best auroc checkpoint EfficientM
 label:bottle,auroc:1.0000,auroc_pixel:0.9842,ap:1.0000,ap_pixel:0.7465
 label:cable,auroc:0.9934,auroc_pixel:0.9876,ap:0.9960,ap_pixel:0.7013
 label:capsule,auroc:0.9944,auroc_pixel:0.9903,ap:0.9988,ap_pixel:0.4248
@@ -51,7 +51,7 @@ label:wood,auroc:0.9982,auroc_pixel:0.9442,ap:0.9994,ap_pixel:0.4168
 label:zipper,auroc:0.9832,auroc_pixel:0.9880,ap:0.9952,ap_pixel:0.5677
 mean auroc:0.9936
 
-best auroc checkpoint EfficientS
+MVtec best auroc checkpoint EfficientS
 label:bottle,auroc:1.0000,auroc_pixel:0.9834,ap:1.0000,ap_pixel:0.7563
 label:cable,auroc:0.9696,auroc_pixel:0.9837,ap:0.9800,ap_pixel:0.7060
 label:capsule,auroc:0.9956,auroc_pixel:0.9906,ap:0.9990,ap_pixel:0.4540
@@ -68,3 +68,19 @@ label:transistor,auroc:0.9654,auroc_pixel:0.9366,ap:0.9528,ap_pixel:0.6180
 label:wood,auroc:0.9904,auroc_pixel:0.9409,ap:0.9967,ap_pixel:0.3935
 label:zipper,auroc:0.9774,auroc_pixel:0.9859,ap:0.9928,ap_pixel:0.5595
 mean auroc:0.9844
+
+
+VisA best auroc checkpoint EfficientS
+label:candle,auroc:0.9691
+label:capsules,auroc:0.8602
+label:cashew,auroc:0.9728
+label:chewinggum,auroc:0.9954
+label:fryum,auroc:0.9898
+label:macaroni1,auroc:0.9882
+label:macaroni2,auroc:0.9348
+label:pcb1,auroc:0.9856
+label:pcb2,auroc:0.9921
+label:pcb3,auroc:0.9899
+label:pcb4,auroc:0.9881
+label:pipe_fryum,auroc:0.9986
+mean auroc:  0.9720488723872386
