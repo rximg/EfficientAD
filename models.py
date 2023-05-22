@@ -104,7 +104,7 @@ def wide_resnet101_2(arch, pretrained=False, progress=True, **kwargs):
 
 class PDN_S(nn.Module):
 
-    def __init__(self, last_kernel_size=384) -> None:
+    def __init__(self, last_kernel_size=384,with_bn=False) -> None:
         super().__init__()
         # Layer Name Stride Kernel Size Number of Kernels Padding Activation
         # Conv-1 1×1 4×4 128 3 ReLU
@@ -113,26 +113,38 @@ class PDN_S(nn.Module):
         # AvgPool-2 2×2 2×2 256 1 -
         # Conv-3 1×1 3×3 256 1 ReLU
         # Conv-4 1×1 4×4 384 0 -
-
+        self.with_bn = with_bn
         self.conv1 = nn.Conv2d(3, 128, kernel_size=4, stride=1, padding=3)
         self.conv2 = nn.Conv2d(128, 256, kernel_size=4, stride=1, padding=3)
         self.conv3 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
         self.conv4 = nn.Conv2d(256, last_kernel_size, kernel_size=4, stride=1, padding=0)
         self.avgpool1 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
         self.avgpool2 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
+        if self.with_bn:
+            self.bn1 = nn.BatchNorm2d(128)
+            self.bn2 = nn.BatchNorm2d(256)
+            self.bn3 = nn.BatchNorm2d(256)
+            self.bn4 = nn.BatchNorm2d(last_kernel_size)
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))
+        x = self.conv1(x)
+        x = self.bn1(x) if self.with_bn else x
+        x = F.relu(x)
         x = self.avgpool1(x)
-        x = F.relu(self.conv2(x))
+        x = self.conv2(x)
+        x = self.bn2(x) if self.with_bn else x
+        x = F.relu(x)
         x = self.avgpool2(x)
-        x = F.relu(self.conv3(x))
+        x = self.conv3(x)
+        x = self.bn3(x) if self.with_bn else x
+        x = F.relu(x)
         x = self.conv4(x)
+        x = self.bn4(x) if self.with_bn else x
         return x
     
 class PDN_M(nn.Module):
 
-    def __init__(self, last_kernel_size=384) -> None:
+    def __init__(self, last_kernel_size=384,with_bn=False) -> None:
         super().__init__()
         # Layer Name Stride Kernel Size Number of Kernels Padding Activation
         # Conv-1 1×1 4×4 256 3 ReLU
@@ -151,16 +163,34 @@ class PDN_M(nn.Module):
         self.conv6 = nn.Conv2d(last_kernel_size, last_kernel_size, kernel_size=1, stride=1, padding=0)
         self.avgpool1 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
         self.avgpool2 = nn.AvgPool2d(kernel_size=2, stride=2, padding=1)
+        if self.with_bn:
+            self.bn1 = nn.BatchNorm2d(256)
+            self.bn2 = nn.BatchNorm2d(512)
+            self.bn3 = nn.BatchNorm2d(512)
+            self.bn4 = nn.BatchNorm2d(512)
+            self.bn5 = nn.BatchNorm2d(last_kernel_size)
+            self.bn6 = nn.BatchNorm2d(last_kernel_size)
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))
+        x = self.conv1(x)
+        x = self.bn1(x) if self.with_bn else x
+        x = F.relu(x)
         x = self.avgpool1(x)
-        x = F.relu(self.conv2(x))
+        x = self.conv2(x)
+        x = self.bn2(x) if self.with_bn else x
+        x = F.relu(x)
         x = self.avgpool2(x)
-        x = F.relu(self.conv3(x))
-        x = F.relu(self.conv4(x))
-        x = F.relu(self.conv5(x))
+        x = self.conv3(x)
+        x = self.bn3(x) if self.with_bn else x
+        x = F.relu(x)
+        x = self.conv4(x)
+        x = self.bn4(x) if self.with_bn else x
+        x = F.relu(x)
+        x = self.conv5(x)
+        x = self.bn5(x) if self.with_bn else x
+        x = F.relu(x)
         x = self.conv6(x)
+        x = self.bn6(x) if self.with_bn else x
         return x
     
 class EncConv(nn.Module):
@@ -211,7 +241,7 @@ class DecBlock(nn.Module):
 
 class DecConv(nn.Module):
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, is_bn=False, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         # Bilinear-1 Resizes the 1×1 input features maps to 3×3
         # DecConv-1 1×1 4×4 64 2 ReLU
@@ -234,13 +264,7 @@ class DecConv(nn.Module):
         # Bilinear-7 Resizes the 128×128 input features maps to 64×64
         # DecConv-7 1×1 3×3 64 1 ReLU
         # DecConv-8 1×1 3×3 384 1 -
-        # self.bilinear1 = nn.Upsample(scale_factor=3, mode='bilinear')
-        # self.bilinear2 = nn.Upsample(scale_factor=2, mode='bilinear')
-        # self.bilinear3 = nn.Upsample(scale_factor=1.7, mode='bilinear')
-        # self.bilinear4 = nn.Upsample(scale_factor=2, mode='bilinear')
-        # self.bilinear5 = nn.Upsample(scale_factor=2, mode='bilinear')
-        # self.bilinear6 = nn.Upsample(scale_factor=2, mode='bilinear')
-        # self.bilinear7 = nn.Upsample(scale_factor=0.5, mode='bilinear')
+        self.is_bn = is_bn
         self.deconv1 = nn.Conv2d(64, 64, kernel_size=4, stride=1, padding=2)
         self.deconv2 = nn.Conv2d(64, 64, kernel_size=4, stride=1, padding=2)
         self.deconv3 = nn.Conv2d(64, 64, kernel_size=4, stride=1, padding=2)
@@ -249,12 +273,20 @@ class DecConv(nn.Module):
         self.deconv6 = nn.Conv2d(64, 64, kernel_size=4, stride=1, padding=2)
         self.deconv7 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
         self.deconv8 = nn.Conv2d(64, 384, kernel_size=3, stride=1, padding=1)
-        self.dropout1 = nn.Dropout(p=0.2)
-        self.dropout2 = nn.Dropout(p=0.2)
-        self.dropout3 = nn.Dropout(p=0.2)
-        self.dropout4 = nn.Dropout(p=0.2)
-        self.dropout5 = nn.Dropout(p=0.2)
-        self.dropout6 = nn.Dropout(p=0.2)
+        if self.is_bn:
+            self.dropout1 = nn.BatchNorm2d(64)
+            self.dropout2 = nn.BatchNorm2d(64)
+            self.dropout3 = nn.BatchNorm2d(64)
+            self.dropout4 = nn.BatchNorm2d(64)
+            self.dropout5 = nn.BatchNorm2d(64)
+            self.dropout6 = nn.BatchNorm2d(64)
+        else:
+            self.dropout1 = nn.Dropout(p=0.2)
+            self.dropout2 = nn.Dropout(p=0.2)
+            self.dropout3 = nn.Dropout(p=0.2)
+            self.dropout4 = nn.Dropout(p=0.2)
+            self.dropout5 = nn.Dropout(p=0.2)
+            self.dropout6 = nn.Dropout(p=0.2)
         # self.apply(weights_init)
 
 
