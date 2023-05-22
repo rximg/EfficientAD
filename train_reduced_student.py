@@ -65,18 +65,19 @@ class Reduced_Student_Teacher(object):
         self.category = config['category']
         self.ckpt_dir = config['ckpt_dir']
         model_size = config['Model']['model_size']
-        self.student = Student(model_size)
+        with_bn = config['Model']['with_bn']
+        self.channel_size = config['Model']['channel_size']
+        self.student = Student(model_size,with_bn)
         self.student = self.student.cuda()
         # self.student.apply(weights_init)
-        self.teacher = Teacher(model_size)
+        self.teacher = Teacher(model_size,with_bn)
         self.load_pretrain_teacher()
-        self.ae = AutoEncoder()
+        self.ae = AutoEncoder(is_bn=with_bn)
         self.ae = self.ae.cuda()
         # self.ae.apply(weights_init)
         resize = config['Model']['input_size']
         self.score_in_mid_size=int(0.9*resize)
         self.resize = resize
-        self.channel_size = config['Model']['channel_size']
         self.fmap_size = (resize,resize)
         self.channel_mean,self.channel_std = None,None
         self.batch_size = config['Model']['batch_size']
@@ -184,17 +185,38 @@ class Reduced_Student_Teacher(object):
             torch.save(channel_std,channel_std_ckpt)
 
     def load_datasets(self):
+        normalize_dataset = get_AD_dataset(
+                        type=self.config['Datasets']['train']['type'],  
+                        root=self.config['Datasets']['train']['root'],
+                        transform=self.data_transforms,
+                        gt_transform=self.gt_transforms,
+                        phase='train',
+                        category=self.category,
+                        split_ratio=1
+                        )
+        normalize_dataloader = DataLoader(normalize_dataset,batch_size=1,shuffle=True,num_workers=4, pin_memory=True)
         dataset = get_AD_dataset(
                         type=self.config['Datasets']['train']['type'],
                         root=self.config['Datasets']['train']['root'],
                         transform=self.data_transforms,
                         gt_transform=self.gt_transforms,
                         phase='train',
-                        category=self.category
+                        category=self.category,
+                        split_ratio=0.8
                         )
         train_dataloader = DataLoader(dataset,batch_size=self.batch_size,shuffle=True,num_workers=4, pin_memory=True)
         train_dataloader = load_infinite(train_dataloader)
         print('load train dataset:length:{}'.format(len(dataset)))
+        quantile_dataset = get_AD_dataset(
+                        type=self.config['Datasets']['train']['type'],
+                        root=self.config['Datasets']['train']['root'],
+                        transform=self.data_transforms,
+                        gt_transform=self.gt_transforms,
+                        phase='eval',
+                        category=self.category,
+                        split_ratio=0.8
+                        )
+        quantile_dataloader = DataLoader(quantile_dataset,batch_size=1,shuffle=True,num_workers=4, pin_memory=True)
         imagenet = get_AD_dataset(
                         type='ImageNet',
                         root=self.config['Datasets']['imagenet']['root'],
@@ -211,17 +233,18 @@ class Reduced_Student_Teacher(object):
                         category=self.category
         )
         eval_dataloader = DataLoader(eval_dataset,batch_size=1,shuffle=True)
-        return train_dataloader,imagenet_iterator,eval_dataloader
+        return normalize_dataloader,train_dataloader,imagenet_iterator,quantile_dataloader, eval_dataloader
 
     def train(self,iterations=70000):
         # Initialize Adam [29] with a learning rate of 10−4 and a weight decay of 10−5 for the parameters of S and A
 
-        train_dataloader,imagenet_iterator,eval_dataloader = self.load_datasets()
-        self.caculate_channel_std(train_dataloader)
+        normalize_dataloader,train_dataloader,imagenet_iterator,quantile_dataloader,eval_dataloader = self.load_datasets()
+        self.caculate_channel_std(normalize_dataloader)
         optimizer = optim.Adam(list(self.student.parameters())+list(self.ae.parameters()),lr=0.0001,weight_decay=0.00001)
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=int(0.95 * iterations), gamma=0.1)
         best_auroc = 0
+        best_loss = 100
         print('start train iter:',iterations)
         for i_batch in range(iterations):
             sample_batched = next(train_dataloader)
@@ -240,22 +263,37 @@ class Reduced_Student_Teacher(object):
                 print("label:{},batch:{}/{},loss_total:{:.4f},loss_st:{:.4f},loss_ae:{:.4f},loss_stae:{:.4f}".format(
                     self.category,i_batch,iterations,loss_total.item(),loss_st.item(),LAE.item(),LSTAE.item()))
 
-                self.qa_st,self.qb_st,self.qa_ae,self.qb_ae = self.map_norm_quantiles(eval_dataloader)
-                auroc = self.eval(eval_dataloader)
-                if auroc > best_auroc:
-                    best_auroc = auroc
-                    print('saving model in {} at auroc:{:.4f}'.format(self.ckpt_dir,auroc))
-                    torch.save(self.student.state_dict(),'{}/{}_student.pth'.format(self.ckpt_dir,self.category))
-                    torch.save(self.ae.state_dict(),'{}/{}_autoencoder.pth'.format(self.ckpt_dir,self.category))
-                    quantiles = {
-                        'qa_st':self.qa_st,
-                        'qb_st':self.qb_st,
-                        'qa_ae':self.qa_ae,
-                        'qb_ae':self.qb_ae,
-                        'std':self.channel_std.cpu().numpy(),
-                        'mean':self.channel_mean.cpu().numpy()
-                    }
-                    np.save('{}/{}_quantiles.npy'.format(self.ckpt_dir,self.category),quantiles)
+                self.qa_st,self.qb_st,self.qa_ae,self.qb_ae = self.map_norm_quantiles(quantile_dataloader)
+                if loss_total < best_loss:
+                    
+                    auroc = self.eval(eval_dataloader)
+                    if auroc > best_auroc:
+                        best_loss = loss_total
+                        best_auroc = auroc
+                        print('saving model in {} at auroc:{:.4f}'.format(self.ckpt_dir,auroc))
+                        torch.save(self.student.state_dict(),'{}/{}_student.pth'.format(self.ckpt_dir,self.category))
+                        torch.save(self.ae.state_dict(),'{}/{}_autoencoder.pth'.format(self.ckpt_dir,self.category))
+                        quantiles = {
+                            'qa_st':self.qa_st,
+                            'qb_st':self.qb_st,
+                            'qa_ae':self.qa_ae,
+                            'qb_ae':self.qb_ae,
+                            'std':self.channel_std.cpu().numpy(),
+                            'mean':self.channel_mean.cpu().numpy()
+                        }
+                        np.save('{}/{}_quantiles.npy'.format(self.ckpt_dir,self.category),quantiles)
+            torch.save(self.student.state_dict(),'{}/{}_student_last.pth'.format(self.ckpt_dir,self.category))
+            torch.save(self.ae.state_dict(),'{}/{}_autoencoder_last.pth'.format(self.ckpt_dir,self.category))
+            quantiles = {
+                'qa_st':self.qa_st,
+                'qb_st':self.qb_st,
+                'qa_ae':self.qa_ae,
+                'qb_ae':self.qb_ae,
+                'std':self.channel_std.cpu().numpy(),
+                'mean':self.channel_mean.cpu().numpy()
+            }
+            np.save('{}/{}_quantiles_last.npy'.format(self.ckpt_dir,self.category),quantiles)
+                
 
     def eval(self,eval_dataloader):
         scores = []

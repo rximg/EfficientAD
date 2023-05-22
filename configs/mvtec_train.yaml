@@ -2,6 +2,7 @@ Datasets:
   train:
     root: data/MVTec_AD/
     type: MVTec
+    split: 0.8
   eval:
     root: data/MVTec_AD/
     type: MVTec
@@ -19,6 +20,7 @@ Model:
   channel_size: 384
   input_size: 256
   iterations: 50000
+  with_bn: Fasle
   
 
 

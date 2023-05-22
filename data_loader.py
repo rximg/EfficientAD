@@ -9,6 +9,7 @@ import shutil
 import imgaug.augmenters as iaa
 # from perlin import rand_perlin_2d_np
 import torch
+import random
 from torch.utils.data import Dataset, DataLoader
 from torchvision.datasets import ImageFolder
 from torchvision import transforms
@@ -16,13 +17,21 @@ import pdb
 import os
 from PIL import Image
 
+def syn_shuffle(lst0,lst1,lst2,lst3):
+    lst = list(zip(lst0,lst1,lst2,lst3))
+    random.shuffle(lst)
+    lst0,lst1,lst2,lst3 = zip(*lst)
+    return lst0,lst1,lst2,lst3
+
 class MVTecDataset(Dataset):
-    def __init__(self, root, transform, gt_transform, phase,category):
-        if phase=='train':
+    def __init__(self, root, transform, gt_transform, phase,category,split_ratio=0.8):
+        self.phase = phase
+        if self.phase in ('train','eval'):
             self.img_path = os.path.join(root, category,'train')
         else:
             self.img_path = os.path.join(root, category,'test')
             self.gt_path = os.path.join(root, category,'ground_truth')
+        self.spit_ratio = split_ratio
         self.transform = transform
         self.gt_transform = gt_transform
         assert os.path.isdir(os.path.join(root,category)), 'Error MVTecDataset category:{}'.format(category)
@@ -56,8 +65,19 @@ class MVTecDataset(Dataset):
                 gt_tot_paths.extend(gt_paths)
                 tot_labels.extend([1]*len(img_paths))
                 tot_types.extend([defect_type]*len(img_paths))
-
-        assert len(img_tot_paths) == len(gt_tot_paths), "Something wrong with test and ground truth pair!"
+        train_len = int(len(img_tot_paths)*self.spit_ratio)
+        # val_len = len(img_tot_paths) - train_len
+        img_tot_paths, gt_tot_paths, tot_labels, tot_types = syn_shuffle(img_tot_paths, gt_tot_paths, tot_labels, tot_types) 
+        if self.phase == 'train':
+            img_tot_paths = img_tot_paths[:train_len]
+            gt_tot_paths = gt_tot_paths[:train_len]
+            tot_labels = tot_labels[:train_len]
+            tot_types = tot_types[:train_len]
+        else:
+            img_tot_paths = img_tot_paths[train_len:]
+            gt_tot_paths = gt_tot_paths[train_len:]
+            tot_labels = tot_labels[train_len:]
+            tot_types = tot_types[train_len:]
         return img_tot_paths, gt_tot_paths, tot_labels, tot_types
 
     def __len__(self):
@@ -66,6 +86,7 @@ class MVTecDataset(Dataset):
     def __getitem__(self, idx):
         img_path, gt, label, img_type = self.img_paths[idx], self.gt_paths[idx], self.labels[idx], self.types[idx]
         img = Image.open(img_path).convert('RGB')
+        origin = img
         img = self.transform(img)
         if gt == 0:
             gt = torch.zeros([1, img.size()[-2], img.size()[-2]])
@@ -77,6 +98,7 @@ class MVTecDataset(Dataset):
 
         # return img, gt, label, os.path.basename(img_path[:-4]), img_type
         return {
+            'origin':origin,
             'image': img,
             'gt': gt,
             'label': label,
@@ -86,9 +108,13 @@ class MVTecDataset(Dataset):
     
 class MVTecLOCODataset(Dataset):
 
-    def __init__(self, root, transform, gt_transform, phase,category):
+    def __init__(self, root, transform, gt_transform, phase,category,split_ratio=None):
+        self.phase==phase
         if phase=='train':
             self.img_path = os.path.join(root,category, 'train')
+        if phase=='eval':
+            self.img_path = os.path.join(root,category, 'validation')
+            # self.gt_path = os.path.join(root,category, 'ground_truth')
         else:
             self.img_path = os.path.join(root,category, 'test')
             self.gt_path = os.path.join(root,category, 'ground_truth')
@@ -141,6 +167,7 @@ class MVTecLOCODataset(Dataset):
     def __getitem__(self, idx):
         img_path, gt, label, img_type = self.img_paths[idx], self.gt_paths[idx], self.labels[idx], self.types[idx]
         img = Image.open(img_path).convert('RGB')
+        origin = img
         img = self.transform(img)
         if gt == 0:
             gt = torch.zeros([1, img.size()[-2], img.size()[-2]])
@@ -158,6 +185,7 @@ class MVTecLOCODataset(Dataset):
 
         # return img, gt, label, os.path.basename(img_path[:-4]), img_type
         return {
+            'origin':origin,
             'image': img,
             'gt': gt,
             'label': label,
@@ -167,12 +195,13 @@ class MVTecLOCODataset(Dataset):
     
 class VisaDataset(Dataset):
 
-    def __init__(self, root, transform, gt_transform, phase, category=None):
+    def __init__(self, root, transform, gt_transform, phase, category=None,split_ratio=0.8):
         self.phase = phase
         self.root = root
         self.category = category
         self.transform = transform
         self.gt_transform = gt_transform
+        self.split_ratio = split_ratio
         self.split_file = root + "/split_csv/1cls.csv"
         assert os.path.isfile(self.split_file), 'Error VsiA dataset'
         assert os.path.isdir(os.path.join(self.root,category)), 'Error VsiA dataset category:{}'.format(category)
@@ -208,6 +237,19 @@ class VisaDataset(Dataset):
                     gt_tot_paths.append(gt_src_path)
                     tot_labels.append(index)
                     tot_types.append(types)
+        train_len = int(len(img_tot_paths)*self.split_ratio)
+        img_tot_paths, gt_tot_paths, tot_labels, tot_types = syn_shuffle(img_tot_paths, gt_tot_paths, tot_labels, tot_types)
+        if self.phase == "train":
+            img_tot_paths = img_tot_paths[:train_len]
+            gt_tot_paths = gt_tot_paths[:train_len]
+            tot_labels = tot_labels[:train_len]
+            tot_types = tot_types[:train_len]
+        elif self.phase == 'eval':
+            img_tot_paths = img_tot_paths[train_len:]
+            gt_tot_paths = gt_tot_paths[train_len:]
+            tot_labels = tot_labels[train_len:]
+            tot_types = tot_types[train_len:]
+
         return img_tot_paths, gt_tot_paths, tot_labels, tot_types
 
     def __len__(self):
@@ -216,6 +258,7 @@ class VisaDataset(Dataset):
     def __getitem__(self, idx):
         img_path, gt, label, img_type = self.img_paths[idx], self.gt_paths[idx], self.labels[idx], self.types[idx]
         img = Image.open(img_path).convert('RGB')
+        origin = img
         img = self.transform(img)
         if gt == 0:
             gt = torch.zeros([1, img.size()[-2], img.size()[-2]])
@@ -227,6 +270,7 @@ class VisaDataset(Dataset):
 
         # return img, gt, label, os.path.basename(img_path[:-4]), img_type
         return {
+            origin:origin,
             'image': img,
             'gt': gt,
             'label': label,
@@ -259,11 +303,11 @@ def load_infinite(loader):
 
 
 
-def get_AD_dataset(type, root, transform, gt_transform=None, phase='train', category=None):
+def get_AD_dataset(type, root, transform, gt_transform=None, phase='train', category=None,split_ratio=None):
     if type == "VisA":
-        return VisaDataset(root, transform, gt_transform, phase, category)
+        return VisaDataset(root, transform, gt_transform, phase, category,split_ratio=split_ratio)
     elif type == "MVTec":
-        return MVTecDataset(root, transform, gt_transform, phase, category)
+        return MVTecDataset(root, transform, gt_transform, phase, category,split_ratio=split_ratio)
     elif type == 'MVTecLoco':
         return MVTecLOCODataset(root, transform, gt_transform, phase, category)
     elif type == 'ImageNet':
