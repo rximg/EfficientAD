@@ -35,6 +35,11 @@ def get_arguments():
     args = parser.parse_args()
     return args
 
+def bool_constructor(loader, node):
+    value = loader.construct_scalar(node)
+    return value.lower() == 'true'
+yaml.add_constructor('tag:yaml.org,2002:bool', bool_constructor, yaml.SafeLoader)
+
 def parse_args(args):
     # if args.config:
     with open(args.config) as f:
@@ -65,7 +70,9 @@ class Reduced_Student_Teacher(object):
         self.category = config['category']
         self.ckpt_dir = config['ckpt_dir']
         model_size = config['Model']['model_size']
-        with_bn = config['Model']['with_bn']
+        with_bn = config['Model'].get('with_bn',False)
+        with_bn = str(with_bn).lower()=='true'
+        pdb.set_trace()
         self.channel_size = config['Model']['channel_size']
         self.student = Student(model_size,with_bn)
         self.student = self.student.cuda()

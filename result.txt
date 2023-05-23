@@ -70,7 +70,8 @@ label:zipper,auroc:0.9774,auroc_pixel:0.9859,ap:0.9928,ap_pixel:0.5595
 mean auroc:0.9844
 
 
-VisA best auroc checkpoint EfficientS
+
+VisA EfficientSmall
 label:candle,auroc:0.9691
 label:capsules,auroc:0.8602
 label:cashew,auroc:0.9728
@@ -84,3 +85,18 @@ label:pcb3,auroc:0.9899
 label:pcb4,auroc:0.9881
 label:pipe_fryum,auroc:0.9986
 mean auroc:  0.9720488723872386
+
+VisA EfficientMedium
+label:candle,auroc:0.9798
+label:capsules,auroc:0.8497
+label:cashew,auroc:0.9836
+label:chewinggum,auroc:0.9982
+label:fryum,auroc:0.9722
+label:macaroni1,auroc:0.9939
+label:macaroni2,auroc:0.9687
+label:pcb1,auroc:0.9887
+label:pcb2,auroc:0.9963
+label:pcb3,auroc:0.9837
+label:pcb4,auroc:0.9911
+label:pipe_fryum,auroc:1.0000
+mean auroc:  0.9754849284928494

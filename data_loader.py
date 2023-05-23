@@ -73,7 +73,7 @@ class MVTecDataset(Dataset):
             gt_tot_paths = gt_tot_paths[:train_len]
             tot_labels = tot_labels[:train_len]
             tot_types = tot_types[:train_len]
-        else:
+        elif self.phase == 'eval':
             img_tot_paths = img_tot_paths[train_len:]
             gt_tot_paths = gt_tot_paths[train_len:]
             tot_labels = tot_labels[train_len:]
@@ -98,7 +98,7 @@ class MVTecDataset(Dataset):
 
         # return img, gt, label, os.path.basename(img_path[:-4]), img_type
         return {
-            'origin':origin,
+            'origin':np.array(origin),
             'image': img,
             'gt': gt,
             'label': label,
@@ -185,7 +185,7 @@ class MVTecLOCODataset(Dataset):
 
         # return img, gt, label, os.path.basename(img_path[:-4]), img_type
         return {
-            'origin':origin,
+            'origin':np.array(origin),
             'image': img,
             'gt': gt,
             'label': label,
@@ -222,6 +222,8 @@ class VisaDataset(Dataset):
                 category, split, label, image_path, mask_path = row
                 image_name = image_path.split("/")[-1]
                 mask_name = mask_path.split("/")[-1]
+                if split=='train' and self.phase=='eval':
+                    split='eval'
                 if self.phase == split and self.category == category :
                     img_src_path = os.path.join(self.root,image_path)
                     if label == "normal":
@@ -270,7 +272,7 @@ class VisaDataset(Dataset):
 
         # return img, gt, label, os.path.basename(img_path[:-4]), img_type
         return {
-            origin:origin,
+            'origin':np.array(origin),
             'image': img,
             'gt': gt,
             'label': label,
@@ -303,7 +305,8 @@ def load_infinite(loader):
 
 
 
-def get_AD_dataset(type, root, transform, gt_transform=None, phase='train', category=None,split_ratio=None):
+
+def get_AD_dataset(type, root, transform, gt_transform=None, phase='train', category=None,split_ratio=1):
     if type == "VisA":
         return VisaDataset(root, transform, gt_transform, phase, category,split_ratio=split_ratio)
     elif type == "MVTec":

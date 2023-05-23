@@ -52,7 +52,7 @@ git lfs pull
 
 | Model         | Dataset    | Official Paper | ours           |
 |---------------|------------|----------------|----------------|
-| EfficientAD-M | VisA       | 98.1           | pending        |
+| EfficientAD-M | VisA       | 98.1           | 97.54          |
 | EfficientAD-M | Mvtec LOCO | 90.7           | pending        |
 | EfficientAD-M | Mvtec AD   | 99.1           | 99.36          |
 | EfficientAD-S | VisA       | 97.5           | 97.20          |

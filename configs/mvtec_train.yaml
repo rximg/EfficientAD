@@ -20,7 +20,7 @@ Model:
   channel_size: 384
   input_size: 256
   iterations: 50000
-  with_bn: Fasle
+  with_bn: false
   
 
 
