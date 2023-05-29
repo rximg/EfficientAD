@@ -63,26 +63,44 @@ class DistillationTraining(object):
         self.wide_resnet_101_arch = wide_resnet_101_arch
         self.print_freq = print_freq
         self.with_bn = with_bn
+        self.resize = resize
         self.data_transforms = transforms.Compose([
                         transforms.Resize((resize, resize),),
                         transforms.RandomGrayscale(p=0.1), #6: Convert Idist to gray scale with a probability of 0.1 and 18: Convert Idist to gray scale with a probability of 0.1
                         transforms.ToTensor(),
                         ])
 
+    # def global_channel_normalize(self,dataloader):
+    #     # iterator = iter(dataloader)
+    #     iterator = cycle(iter(dataloader)) 
+    #     # for c in range(self.channel_size):
+    #     # x_mean = torch.empty(0)
+    #     # x_std = torch.empty(0)
+    #     x = torch.empty(0)
+    #     for iteration in tqdm.tqdm(range(self.normalize_iter)):
+    #         ldist = next(iterator)[0]
+    #         ldist = ldist.cuda()
+    #         y = self.pretrain(ldist).detach().cpu()
+    #         x = torch.cat((x,y),dim=0)
+    #     self.mean = x.mean(dim=[0,2,3],keepdim=True).cuda()
+    #     self.std = x.std(dim=[0,2,3],keepdim=True).cuda()
+
     def global_channel_normalize(self,dataloader):
-        # iterator = iter(dataloader)
-        iterator = cycle(iter(dataloader)) 
-        # for c in range(self.channel_size):
-        # x_mean = torch.empty(0)
-        # x_std = torch.empty(0)
-        x = torch.empty(0)
-        for iteration in tqdm.tqdm(range(self.normalize_iter)):
-            ldist = next(iterator)[0]
-            ldist = ldist.cuda()
+        num = 0
+        input_data = torch.randn(1,3,self.resize,self.resize).cuda()
+        temp_tensor = self.pretrain(input_data)
+        x = torch.zeros((500,self.channel_size,*temp_tensor.shape[2:]))
+        for item in tqdm.tqdm(dataloader):
+            if num>=500:
+                break
+            ldist = item['image'].cuda()
             y = self.pretrain(ldist).detach().cpu()
-            x = torch.cat((x,y),dim=0)
-        self.mean = x.mean(dim=[0,2,3],keepdim=True).cuda()
-        self.std = x.std(dim=[0,2,3],keepdim=True).cuda()
+            yb = y.shape[0]
+            x[num:num+yb,:,:,:] = y[:,:,:,:]
+            num += yb
+        channel_mean = x[:num,:,:,:].mean(dim=(0,2,3),keepdim=True).cuda()
+        channel_std = x[:num,:,:,:].std(dim=(0,2,3),keepdim=True).cuda()
+        return channel_mean,channel_std
 
     def load_pretrain(self):
         self.pretrain = wide_resnet101_2(self.wide_resnet_101_arch, pretrained=True)
@@ -107,17 +125,17 @@ class DistillationTraining(object):
         dataloader = load_infinite(dataloader)
         teacher = Teacher(self.model_size)
         teacher = teacher.cuda()
-        mean_param_path = '{}/imagenet_channel_std.pth'.format(self.save_path)
-        if os.path.exists(mean_param_path):
-            mean_param = torch.load(mean_param_path)
-            self.mean = mean_param['mean'].cuda()
-            self.std = mean_param['std'].cuda()
-        else:
-            self.global_channel_normalize(dataloader)
-            torch.save({
-                'mean': self.mean,
-                'std': self.std
-            }, '{}/imagenet_channel_std.pth'.format(self.save_path))
+        # mean_param_path = '{}/imagenet_channel_std.pth'.format(self.save_path)
+        # if os.path.exists(mean_param_path):
+        #     mean_param = torch.load(mean_param_path)
+        #     self.mean = mean_param['mean'].cuda()
+        #     self.std = mean_param['std'].cuda()
+        # else:
+        self.mean,self.std = self.global_channel_normalize(dataloader)
+        # torch.save({
+        #     'mean': self.mean,
+        #     'std': self.std
+        # }, '{}/imagenet_channel_std.pth'.format(self.save_path))
         optimizer = torch.optim.Adam(teacher.parameters(), lr=0.0001, weight_decay=0.00001)
         scheduler = torch.optim.lr_scheduler.StepLR(
             optimizer, step_size=int(0.95 * self.train_iter), gamma=0.1)

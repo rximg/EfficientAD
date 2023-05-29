@@ -72,7 +72,7 @@ class Reduced_Student_Teacher(object):
         model_size = config['Model']['model_size']
         with_bn = config['Model'].get('with_bn',False)
         with_bn = str(with_bn).lower()=='true'
-        pdb.set_trace()
+        # pdb.set_trace()
         self.channel_size = config['Model']['channel_size']
         self.student = Student(model_size,with_bn)
         self.student = self.student.cuda()
@@ -122,17 +122,21 @@ class Reduced_Student_Teacher(object):
 
     def global_channel_normalize(self,dataloader):
         num = 0
-        x = torch.empty(0)
+        input_data = torch.randn(1,3,self.resize,self.resize).cuda()
+        temp_tensor = self.teacher(input_data)
+        x = torch.zeros((500,self.channel_size,*temp_tensor.shape[2:]))
         for item in tqdm.tqdm(dataloader):
-            if num>500:
+            if num>=500:
                 break
-            num +=1
             ldist = item['image'].cuda()
             y = self.teacher(ldist).detach().cpu()
-            x = torch.cat((x,y),0)
-        self.channel_mean = x.mean(dim=[0,2,3],keepdim=True).cuda()
-        self.channel_std = x.std(dim=[0,2,3],keepdim=True).cuda()
+            yb = y.shape[0]
+            x[num:num+yb,:,:,:] = y[:,:,:,:]
+            num += yb
+        self.channel_mean = x[:num,:,:,:].mean(dim=(0,2,3),keepdim=True).cuda()
+        self.channel_std = x[:num,:,:,:].std(dim=(0,2,3),keepdim=True).cuda()
         return self.channel_mean,self.channel_std
+
 
     def choose_random_aug_image(self,image):
         aug_index = random.choice([1,2,3])
@@ -178,18 +182,13 @@ class Reduced_Student_Teacher(object):
     
     def caculate_channel_std(self,dataloader):
         channel_std_ckpt = "{}/{}_good_dataset_channel_std.pth".format(self.ckpt_dir,self.category)
-        if osp.isfile(channel_std_ckpt):
-            channel_std = torch.load(channel_std_ckpt)
-            self.channel_mean = channel_std['mean'].cuda()
-            self.channel_std = channel_std['std'].cuda()
-        else:
-            self.channel_mean,self.channel_std = self.global_channel_normalize(dataloader)
-            print('channel mean:{}'.format(self.channel_mean.shape),'channel std:{}'.format(self.channel_std.shape))
-            channel_std = {
-                'mean':self.channel_mean,
-                'std':self.channel_std
-            }
-            torch.save(channel_std,channel_std_ckpt)
+        self.channel_mean,self.channel_std = self.global_channel_normalize(dataloader)
+        print('channel mean:{}'.format(self.channel_mean.shape),'channel std:{}'.format(self.channel_std.shape))
+        channel_std = {
+            'mean':self.channel_mean,
+            'std':self.channel_std
+        }
+        torch.save(channel_std,channel_std_ckpt)
 
     def load_datasets(self):
         normalize_dataset = get_AD_dataset(
@@ -289,17 +288,17 @@ class Reduced_Student_Teacher(object):
                             'mean':self.channel_mean.cpu().numpy()
                         }
                         np.save('{}/{}_quantiles.npy'.format(self.ckpt_dir,self.category),quantiles)
-            torch.save(self.student.state_dict(),'{}/{}_student_last.pth'.format(self.ckpt_dir,self.category))
-            torch.save(self.ae.state_dict(),'{}/{}_autoencoder_last.pth'.format(self.ckpt_dir,self.category))
-            quantiles = {
-                'qa_st':self.qa_st,
-                'qb_st':self.qb_st,
-                'qa_ae':self.qa_ae,
-                'qb_ae':self.qb_ae,
-                'std':self.channel_std.cpu().numpy(),
-                'mean':self.channel_mean.cpu().numpy()
-            }
-            np.save('{}/{}_quantiles_last.npy'.format(self.ckpt_dir,self.category),quantiles)
+                torch.save(self.student.state_dict(),'{}/{}_student_last.pth'.format(self.ckpt_dir,self.category))
+                torch.save(self.ae.state_dict(),'{}/{}_autoencoder_last.pth'.format(self.ckpt_dir,self.category))
+                quantiles = {
+                    'qa_st':self.qa_st,
+                    'qb_st':self.qb_st,
+                    'qa_ae':self.qa_ae,
+                    'qb_ae':self.qb_ae,
+                    'std':self.channel_std.cpu().numpy(),
+                    'mean':self.channel_mean.cpu().numpy()
+                }
+                np.save('{}/{}_quantiles_last.npy'.format(self.ckpt_dir,self.category),quantiles)
                 
 
     def eval(self,eval_dataloader):
