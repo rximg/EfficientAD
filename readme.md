@@ -40,13 +40,8 @@ python distillaion_training.py
 python train_reduced_student.py  -c configs/mvtec_train.yaml
 ```
 ## Pretrain Weights
-#### 1. intall Git LFS
-https://git-lfs.github.com/
-#### 2. Pull LFS
-```
-cd EfficientAD
-git lfs pull
-```
+
+Download pretrain weights from [release page](!https://github.com/rximg/EfficientAD/releases/tag/0.0.1).
 
 ## Some results
 
